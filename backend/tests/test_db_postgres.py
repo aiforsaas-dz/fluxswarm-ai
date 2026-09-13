@@ -86,7 +86,7 @@ def test_create_user_returns_row_and_seed_defaults():
     u = pg.create_user("alice@example.com", "Alice", "hunter2")
     assert u["email"] == "alice@example.com"
     assert u["plan"] == "demo"
-    assert u["credits"] == 3
+    assert u["credits"] == pg.PLANS["demo"]["credits"]
     assert u["ref_code"].startswith("FLX-")
 
 
@@ -150,13 +150,14 @@ def test_add_project_duplicate_board_slug_raises():
 def test_concurrent_deduct_credit_race_free():
     """Exactly `credits` of N concurrent debits can succeed (no overspend)."""
     u = pg.create_user("grace@example.com", "Grace", "pw")
-    pg.add_credit(u["id"], 7)          # 3 (demo) + 7 = 10 credits
+    total = pg.PLANS["demo"]["credits"] + 7
+    pg.add_credit(u["id"], 7)          # demo + 7 credits
     results = [None] * 20
     def worker():
         return pg.deduct_credit(u["id"])
     with concurrent.futures.ThreadPoolExecutor(max_workers=20) as ex:
         results = list(ex.map(lambda _: worker(), range(20)))
-    assert sum(results) == 10
+    assert sum(results) == total
     assert pg.get_user_credits(u["id"]) == 0
 
 
@@ -201,7 +202,7 @@ def test_concurrent_reward_referrer_once_only_one_winner():
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
         results = list(ex.map(lambda _: worker(), range(10)))
     assert sum(1 for r in results if r) == 1
-    assert pg.get_user_credits(a["id"]) == 3 + pg.REFERRAL_REWARD_CREDITS
+    assert pg.get_user_credits(a["id"]) == pg.PLANS["demo"]["credits"] + pg.REFERRAL_REWARD_CREDITS
 
 
 def test_upgrade_then_downgrade_plan():
@@ -266,16 +267,17 @@ def test_template_buy_credits_transfer_and_refund():
     buyer = pg.create_user("quinn@example.com", "Quinn", "pw")
     tid = pg.publish_template(author["id"], "S", "d", ["dev", "arch"], 3)
     assert pg.buy_template(tid, buyer["id"]) is True
-    assert pg.get_user_credits(buyer["id"]) == 0                 # 3 - 3
-    assert pg.get_user_credits(author["id"]) == 3 + 1            # author earns max(1,3//2)=1
+    base = pg.PLANS["demo"]["credits"]
+    assert pg.get_user_credits(buyer["id"]) == base - 3
+    assert pg.get_user_credits(author["id"]) == base + 1            # author earns max(1,3//2)=1
     # Below-budget purchase fails atomically (nothing debited).
     fail = pg.publish_template(author["id"], "Exp", "d", ["dev"], 100)
     assert pg.buy_template(fail, buyer["id"]) is False
-    assert pg.get_user_credits(buyer["id"]) == 0
+    assert pg.get_user_credits(buyer["id"]) == base - 3
     # Refund reverses exactly the last purchase (author's share clawed back).
     assert pg.refund_template_purchase(tid, buyer["id"]) is True
-    assert pg.get_user_credits(buyer["id"]) == 3
-    assert pg.get_user_credits(author["id"]) == 3
+    assert pg.get_user_credits(buyer["id"]) == base
+    assert pg.get_user_credits(author["id"]) == base
 
 
 def test_template_json_agents_roundtrip():
