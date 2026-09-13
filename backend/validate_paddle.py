@@ -105,6 +105,9 @@ def main() -> int:
     checks.append({
         "var": "PADDLE_PRICE_TOPUP",
         "ok": bool(pid) and pid.startswith("pri_"),
+        # True = non-blocking: a missing top-up must NOT keep the billing gate
+        # closed (it is optional; three price ids are enough to sell).
+        "optional": True,
         "detail": "pri_*" if (bool(pid) and pid.startswith("pri_")) else (
             "MISSING (optional — skip or configure the $9 refill pack)"),
     })
@@ -133,7 +136,9 @@ def main() -> int:
             "detail": "local sandbox mode ON (checkout + webhook fully local)",
         })
 
-    if payments and not all(c["ok"] for c in checks if c["var"].startswith(("PADDLE", "FLUXSWARM_PAYMENT"))):
+    if payments and not all(c["ok"] for c in checks
+                            if c["var"].startswith(("PADDLE", "FLUXSWARM_PAYMENT"))
+                            and not c.get("optional")):
         checks.append({
             "var": "FLUXSWARM_PAYMENTS=1",
             "ok": False,
@@ -142,7 +147,7 @@ def main() -> int:
         })
 
     for c in checks:
-        if not c["ok"]:
+        if not c["ok"] and not c.get("optional"):
             problems += 1
 
     if "--json" in sys.argv[1:]:
