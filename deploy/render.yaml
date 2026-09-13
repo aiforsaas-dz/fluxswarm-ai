@@ -45,8 +45,74 @@ services:
         value: "512"
       - key: MEMORY_GUARD_MB_PER_WORKER
         value: "512"
+      # Neon free direct endpoint caps connections (~10): never let the pool
+      # default (min 10 / max 50) starve other clients on the shared compute.
+      - key: FLUXSWARM_DB_POOL_MIN
+        value: "1"
+      - key: FLUXSWARM_DB_POOL_MAX
+        value: "4"
+      - key: FLUXSWARM_DB_TIMEOUT_S
+        value: "30"
       # Set both secrets in the Render dashboard (sync: false = manual only).
       - key: FLUXSWARM_DATABASE_URL
         sync: false
       - key: REDIS_URL
+        sync: false
+      # Billing — live Paddle is wired (see §2 in backend/DEPLOY-US.md).
+      # FLUXSWARM_PAYMENTS and FLUXSWARM_PAYMENT_PROVIDER are NOT sync:false so
+      # blueprint syncs keep the live billing gate open. The key-like values
+      # below (API key, webhook secret, client token, price ids) stay sync:false
+      # and are set manually in the dashboard / via the Render API.
+      - key: FLUXSWARM_PAYMENTS
+        value: "1"
+      - key: FLUXSWARM_PAYMENT_PROVIDER
+        value: paddle
+      - key: PADDLE_API_KEY
+        sync: false
+      - key: PADDLE_WEBHOOK_SECRET
+        sync: false
+      - key: PADDLE_CLIENT_TOKEN
+        sync: false
+      - key: PADDLE_PRICE_STARTER
+        sync: false
+      - key: PADDLE_PRICE_PRO
+        sync: false
+      - key: PADDLE_PRICE_SCALE
+        sync: false
+      - key: PADDLE_PRICE_TOPUP
+        sync: false
+      # Optional ops extras (leave empty to disable).
+      - key: FLUXSWARM_CONTACT_EMAIL
+        value: support@fluxswarm.ai
+      - key: FLUXSWARM_PUBLIC_BASE_URL
+        sync: false
+      # Demo account password used by seed_demo() to re-pin the demo login
+      # (demo@fluxswarm.ai). Set via dashboard/Render API so it never ships in
+      # the blueprint; sync:false guards it from blueprint syncs.
+      - key: FLUXSWARM_DEMO_PASSWORD
+        sync: false
+      - key: FLUXSWARM_RESEND_API_KEY
+        sync: false
+      - key: FLUXSWARM_ANALYTICS_DOMAIN
+        sync: false
+      # In-app support assistant AI fallback (optional; leave empty → rules + escalate).
+      - key: FLUXSWARM_SUPPORT_AI_BASE
+        value: https://api.openai.com/v1
+      - key: FLUXSWARM_SUPPORT_AI_MODEL
+        value: gpt-4o-mini
+      - key: FLUXSWARM_SUPPORT_AI_KEY
+        sync: false
+      # Demo runtime ceiling (seconds) before the reaper force-seals a demo
+      # board. The 600s default is too short for a FULL 6-lane squad on the
+      # free instance; 1800 lets even the slow fallback slot converge while
+      # the demo page (polling) keeps the instance awake.
+      - key: FLUXSWARM_DEMO_MAX_RUNTIME_S
+        value: "1800"
+      # Demo AI providers (provider_pool.py): gemini-1.5-flash is the fast
+      # preferred slot — set GEMINI_API_KEY for the demo to converge quickly.
+      # openrouter nemotron-free is the slow fallback when the fast key is
+      # absent or unhealthy.
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
         sync: false

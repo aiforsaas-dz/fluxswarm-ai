@@ -45,6 +45,14 @@ services:
         value: "512"
       - key: MEMORY_GUARD_MB_PER_WORKER
         value: "512"
+      # Neon free direct endpoint caps connections (~10): never let the pool
+      # default (min 10 / max 50) starve other clients on the shared compute.
+      - key: FLUXSWARM_DB_POOL_MIN
+        value: "1"
+      - key: FLUXSWARM_DB_POOL_MAX
+        value: "4"
+      - key: FLUXSWARM_DB_TIMEOUT_S
+        value: "30"
       # Set both secrets in the Render dashboard (sync: false = manual only).
       - key: FLUXSWARM_DATABASE_URL
         sync: false
