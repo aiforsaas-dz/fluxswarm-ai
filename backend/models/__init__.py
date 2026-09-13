@@ -115,6 +115,22 @@ class SquadTemplate(Base):
     created_at: Mapped[float] = mapped_column(BIGINT, nullable=False)
 
 
+class CustomAgent(Base):
+    """User-defined squad member (P4). Name + objective + skills describe what
+    this agent should produce; owners attach rows via /api/projects' agent_ids."""
+
+    __tablename__ = "custom_agents"
+
+    id: Mapped[int] = mapped_column(BIGINT, Identity(), primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BIGINT, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    objective: Mapped[str] = mapped_column(Text, nullable=False)
+    skills: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    created_at: Mapped[float] = mapped_column(BIGINT, nullable=False)
+
+
 class TemplatePurchase(Base):
     __tablename__ = "template_purchases"
 
@@ -238,7 +254,7 @@ class ProviderUsage(Base):
 
 # Keep an explicit list of every model for Alembic autogenerate and tooling.
 MODELS: tuple[type[Base], ...] = (
-    User, Project, Referral, SquadTemplate, TemplatePurchase, PaymentEvent,
-    TelegramLink, TelegramCode, PasswordReset, DemoUsage, ProviderAgreement,
-    ProviderUsage,
+    User, Project, Referral, CustomAgent, SquadTemplate, TemplatePurchase,
+    PaymentEvent, TelegramLink, TelegramCode, PasswordReset, DemoUsage,
+    ProviderAgreement, ProviderUsage,
 )

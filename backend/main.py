@@ -383,6 +383,12 @@ def sanitize_goal(goal: str | None) -> str:
     return text[:_GOAL_MAX_LEN]
 
 
+def _safe_artifact_name(name: str) -> str:
+    """Filename-safe slug for custom-agent artifact names (e.g. CUSTOM_<name>.md)."""
+    slug = re.sub(r"[^A-Za-z0-9_-]+", "_", name or "agent").strip("_") or "agent"
+    return slug[:64]
+
+
 def _demo_user(request: Request):
     """Resolve the optional bearer user for demo endpoints (never raises).
 
@@ -825,13 +831,15 @@ def _project_by_pid(pid: int) -> dict | None:
 
 
 def _fire_dispatch(slug: str, plan: str, provider_keys=None, pid: int | None = None,
-                   goal: str | None = None) -> None:
+                   goal: str | None = None,
+                   custom_agents: list[dict] | None = None) -> None:
     """Fire whichever driver owns this host: the thin in-process project driver
     on small-memory hosts (the fat Hermes worker OOMs a 512 MB container
     ~40-80s into work — measured), otherwise the fat multi-wave dispatcher."""
     if hc.projects_are_thin():
         threading.Thread(target=_bg_thin_project, args=(slug, goal or ""),
-                         kwargs={"provider_keys": provider_keys, "pid": pid},
+                         kwargs={"provider_keys": provider_keys, "pid": pid,
+                                 "custom_agents": custom_agents},
                          daemon=True).start()
     else:
         threading.Thread(target=_bg_dispatch, args=(slug, plan),
@@ -896,7 +904,8 @@ def _insert_gate_event(slug: str, task_id: str, evidence: dict) -> None:
         pass
 
 
-def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None = None) -> None:
+def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None = None,
+                     custom_agents: list[dict] | None = None) -> None:
     """Drive the thin 6-lane project squad to completion in a daemon thread.
 
     Planner -> Architect -> DevOps -> TDD -> Reviewer -> Builder, each a REAL
@@ -905,6 +914,11 @@ def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None =
     no fat CLI worker, no OOM. On failure the launched lanes stay honest on the
     board and the launch is finalized (credit refunded only when no real work
     was produced — the same policy as the fat path).
+
+    ``custom_agents`` (P4): optional user-defined agents
+    ``{"id", "name", "objective", "skills"}`` added as extra lanes
+    (assignee ``ca-<id>``). Each runs after Reviewer and before Builder with a
+    real provider completion writing ``CUSTOM_<name>.md`` into the workspace.
     """
     provider = model = api_key = None
     try:
@@ -968,6 +982,38 @@ def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None =
                     evidence = evidence_gate.write_evidence_md(str(ws_root), goal)
                 except Exception:
                     evidence = None
+                # P4 custom agents: each user-defined agent runs as an extra
+                # lane right after review but before the final assembly, so its
+                # deliverable joins the workspace the Builder assembles.
+                for agent in (custom_agents or []):
+                    aid = str(agent.get("id", "")).strip()
+                    ctid = by_role.get(f"ca-{aid}") if aid else None
+                    if not ctid:
+                        continue
+                    name = (agent.get("name") or "Custom agent").strip() or "Custom agent"
+                    try:
+                        hc.thin_execute(
+                            board=slug, task_id=ctid, workspace=str(ws_root),
+                            provider=provider, model=model,
+                            prompt=demo_llm.custom_agent_prompt(
+                                task_title=name,
+                                objective=goal,
+                                agent_name=name,
+                                agent_objective=(agent.get("objective") or "").strip() or name,
+                                skills=(agent.get("skills") or "").strip(),
+                                project_goal=goal),
+                            objective=goal,
+                            artifact_name=f"CUSTOM_{_safe_artifact_name(name)}.md",
+                            api_key=api_key,
+                            max_tokens=demo_llm.lane_max_tokens(goal, "X.md"))
+                    except Exception as exc:
+                        # A custom-agent lane failing must not kill the swarm:
+                        # it stays visible as a failed lane (honest board).
+                        try:
+                            hc._insert_event(slug, ctid, "note",
+                                             f"Custom agent lane failed: {type(exc).__name__}")
+                        except Exception:
+                            pass
             brief = _ws_brief(ws_root)
         if pid is not None:
             status = "ok"
@@ -1307,6 +1353,7 @@ class ProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     goal: str = Field(min_length=1, max_length=4000)
     ref: str | None = None
+    agent_ids: list[int] = Field(default_factory=list)
 
 
 @functools.lru_cache(maxsize=1)
@@ -2260,6 +2307,35 @@ def public_user(u: dict) -> dict:
 
 
 # ---------- user projects (auth required) ----------
+_CUSTOM_AGENTS_MAX = 6
+
+
+def _resolve_custom_agents(user: dict, agent_ids: list[int]) -> list[dict]:
+    """Load the user's custom agents by id (owner-scoped, ordered, bounded).
+
+    Returns a list of ``{"id", "name", "objective", "skills"}`` ready for the
+    thin launcher. Unknown/foreign ids are silently dropped (never an error),
+    so a stale client payload cannot crash a launch.
+    """
+    if not agent_ids:
+        return []
+    out = []
+    seen = set()
+    for aid in agent_ids[: _CUSTOM_AGENTS_MAX]:
+        if aid in seen or not isinstance(aid, int):
+            continue
+        seen.add(aid)
+        agent = db.get_custom_agent(user["id"], aid)
+        if agent:
+            out.append({
+                "id": agent["id"],
+                "name": (agent.get("name") or "").strip() or "Custom agent",
+                "objective": (agent.get("objective") or "").strip(),
+                "skills": (agent.get("skills") or "").strip(),
+            })
+    return out
+
+
 @app.get("/api/projects")
 def api_projects(user: dict = Depends(get_current_user)):
     return db.list_user_projects(user["id"])
@@ -2300,6 +2376,7 @@ def api_create_project(payload: ProjectCreate, request: Request,
         notify.send_depletion_async(user["email"], user["name"])
     slug = make_project_slug(user["id"])
     keys = _user_provider_keys(user)
+    custom_agents = _resolve_custom_agents(user, payload.agent_ids)
     # Phase F: append the provider-usage ledger row with the ACTUAL resolved
     # runtime (BYOK beats operator default) before the launch. Best-effort:
     # accounting must never change launch behavior.
@@ -2321,7 +2398,8 @@ def api_create_project(payload: ProjectCreate, request: Request,
             # whole workspace and OOM a 512 MB container (measured crash loop).
             # Build the real 6-lane squad directly in kanban.db; the background
             # thin driver then executes each lane with a real provider call.
-            swarm = hc.launch_project_thin(slug, goal, provider=prov, model=model)
+            swarm = hc.launch_project_thin(slug, goal, provider=prov, model=model,
+                                           custom_agents=custom_agents)
         else:
             hc.ensure_board(slug)
             swarm = hc.launch_swarm(slug, goal, provider_keys=keys)
@@ -2334,7 +2412,8 @@ def api_create_project(payload: ProjectCreate, request: Request,
         db.refund_launch_credit(user["id"])
         raise HTTPException(status_code=500, detail="Failed to launch swarm")
     pid = db.add_project(user["id"], slug, payload.name or "Project", goal)
-    _fire_dispatch(slug, user["plan"], _user_provider_keys(user), pid=pid, goal=goal)
+    _fire_dispatch(slug, user["plan"], _user_provider_keys(user), pid=pid, goal=goal,
+                   custom_agents=custom_agents)
     audit.audit("project.create", uid=user["id"], email=user["email"], ip=_client_ip(request),
                 outcome="ok", slug=slug, plan=user["plan"])
     return _swarm_payload(slug, payload.goal, swarm)
@@ -4111,6 +4190,53 @@ def api_buy_template(tid: int, payload: BuyIn, request: Request,
     if not launched:
         resp["launch_error"] = launch_error
     return resp
+
+
+# ---------- custom agents (P4) ----------
+class CustomAgentIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    objective: str = Field(min_length=1, max_length=500)
+    skills: str = Field(default="", max_length=300)
+
+
+_CUSTOM_AGENT_LIMITS = {"name_max": 80, "objective_max": 500, "skills_max": 300,
+                        "max_agents": 20}
+
+
+@app.post("/api/agents")
+def api_create_custom_agent(payload: CustomAgentIn, request: Request,
+                            user: dict = Depends(get_current_user)):
+    name = _clean_text(payload.name, name="agent name", max_len=_CUSTOM_AGENT_LIMITS["name_max"])
+    objective = _clean_text(payload.objective, name="objective",
+                            max_len=_CUSTOM_AGENT_LIMITS["objective_max"])
+    skills = (payload.skills or "").strip()
+    if skills:
+        skills = _clean_text(skills, name="skills", max_len=_CUSTOM_AGENT_LIMITS["skills_max"])
+    existing = db.list_custom_agents(user["id"])
+    if len(existing) >= _CUSTOM_AGENT_LIMITS["max_agents"]:
+        raise HTTPException(status_code=429, detail="Maximum of 20 custom agents per account")
+    for agent in existing:
+        if agent.get("name", "").strip().lower() == name.lower():
+            raise HTTPException(status_code=400, detail="An agent with this name already exists")
+    aid = db.create_custom_agent(user["id"], name, objective, skills)
+    audit.audit("agent.create", uid=user["id"], email=user["email"],
+                ip=_client_ip(request), outcome="ok", agent_id=aid, name=name)
+    return {"id": aid, "ok": True}
+
+
+@app.get("/api/agents")
+def api_list_custom_agents(user: dict = Depends(get_current_user)):
+    return db.list_custom_agents(user["id"])
+
+
+@app.delete("/api/agents/{aid}")
+def api_delete_custom_agent(aid: int, request: Request,
+                            user: dict = Depends(get_current_user)):
+    if not db.delete_custom_agent(user["id"], aid):
+        raise HTTPException(status_code=404, detail="Agent not found")
+    audit.audit("agent.delete", uid=user["id"], email=user["email"],
+                ip=_client_ip(request), outcome="ok", agent_id=aid)
+    return {"ok": True}
 
 
 # ---------- security (ECC AgentShield) ----------

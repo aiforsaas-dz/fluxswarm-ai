@@ -113,6 +113,15 @@ def init_db():
             FOREIGN KEY(template_id) REFERENCES squad_templates(id),
             FOREIGN KEY(buyer_id) REFERENCES users(id)
         );
+        CREATE TABLE IF NOT EXISTS custom_agents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            objective TEXT NOT NULL,
+            skills TEXT NOT NULL DEFAULT '',
+            created_at REAL NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        );
         CREATE TABLE IF NOT EXISTS payment_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             event_id TEXT UNIQUE NOT NULL,
@@ -192,6 +201,7 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_provider_usage_day ON provider_usage(day);
         CREATE INDEX IF NOT EXISTS idx_provider_usage_surface ON provider_usage(surface);
         CREATE INDEX IF NOT EXISTS idx_provider_usage_slug ON provider_usage(slug);
+        CREATE INDEX IF NOT EXISTS idx_custom_agents_user ON custom_agents(user_id);
         """
     )
     c.commit()
@@ -894,9 +904,12 @@ def account_payload(user_id: int) -> dict:
             "SELECT telegram_chat_id,linked_at FROM telegram_links WHERE user_id=?", (user_id,))]
         agrees = [dict(r) for r in c.execute(
             "SELECT provider,agreed_at,version FROM provider_agreements WHERE user_id=?", (user_id,))]
+        agents = [dict(r) for r in c.execute(
+            "SELECT id,name,objective,skills,created_at FROM custom_agents WHERE user_id=?", (user_id,))]
         return {"user": dict(u), "projects": projects, "referrals": refs,
                 "templates": tpls, "template_purchases": buys, "payment_events": pays,
-                "telegram_links": tg, "provider_agreements": agrees}
+                "telegram_links": tg, "provider_agreements": agrees,
+                "custom_agents": agents}
     finally:
         c.close()
 
@@ -920,6 +933,7 @@ def delete_user(user_id: int) -> bool:
             "DELETE FROM password_resets WHERE user_id=?",
             "DELETE FROM provider_agreements WHERE user_id=?",
             "DELETE FROM admt_disclosures WHERE user_id=?",
+            "DELETE FROM custom_agents WHERE user_id=?",
             "DELETE FROM users WHERE id=?",
         ):
             try:
@@ -1254,6 +1268,47 @@ def get_template(tid: int) -> dict | None:
     except Exception:
         d["agents"] = []
     return d
+
+
+# ---------- custom agents (P4) ----------
+def create_custom_agent(user_id: int, name: str, objective: str, skills: str = "") -> int:
+    c = _conn()
+    cur = c.execute(
+        "INSERT INTO custom_agents (user_id,name,objective,skills,created_at) VALUES (?,?,?,?,?)",
+        (user_id, name, objective, skills, time.time()),
+    )
+    aid = cur.lastrowid
+    c.commit()
+    c.close()
+    return aid
+
+
+def list_custom_agents(user_id: int) -> list[dict]:
+    c = _conn()
+    rows = c.execute(
+        "SELECT id,name,objective,skills,created_at FROM custom_agents "
+        "WHERE user_id=? ORDER BY created_at DESC", (user_id,)).fetchall()
+    c.close()
+    return [dict(r) for r in rows]
+
+
+def get_custom_agent(user_id: int, aid: int) -> dict | None:
+    c = _conn()
+    row = c.execute(
+        "SELECT id,name,objective,skills,created_at FROM custom_agents "
+        "WHERE user_id=? AND id=?", (user_id, aid)).fetchone()
+    c.close()
+    return dict(row) if row else None
+
+
+def delete_custom_agent(user_id: int, aid: int) -> bool:
+    c = _conn()
+    cur = c.execute(
+        "DELETE FROM custom_agents WHERE user_id=? AND id=?", (user_id, aid))
+    c.commit()
+    ok = cur.rowcount > 0
+    c.close()
+    return ok
 
 
 def buy_template(tid: int, buyer_id: int) -> bool:

@@ -683,3 +683,24 @@ def reviewer_prompt(task_title: str, objective: str, brief: str = "") -> str:
         "text) listing the strengths and any gaps or risks in the artifacts "
         "relative to the objective. This becomes REVIEW.md.\n"
     )
+
+
+def custom_agent_prompt(task_title: str, objective: str,
+                        agent_name: str, agent_objective: str,
+                        skills: str = "", project_goal: str = "") -> str:
+    """Prompt for a user-defined squad member (P4 custom agents).
+
+    The user-defined agent name/objective/skills drive the prompt; the launch
+    project goal is context. Produces one self-contained markdown artifact.
+    """
+    head = f"Task: {task_title}\n\n"
+    ctx = f"Project being built: {project_goal}\n\n" if project_goal.strip() else ""
+    skill_line = f"Use these skills/techniques: {skills}\n\n" if skills.strip() else ""
+    return (
+        f"{head}Objective: {objective}\n\n"
+        f"{ctx}You are the specialized agent '{agent_name}'. Your mission: {agent_objective}\n\n"
+        f"{skill_line}"
+        "Produce a SINGLE self-contained markdown document (``# `` title, short "
+        "sections) that a project team can act on — the deliverable for your "
+        "lane. Do not write files; output only the document text.\n"
+    )

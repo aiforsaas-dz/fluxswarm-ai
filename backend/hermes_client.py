@@ -827,7 +827,8 @@ def _thin_project_lanes() -> list[tuple[str, str, str, str]]:
 
 
 def launch_project_thin(board: str, goal: str, provider: Optional[str] = None,
-                        model: Optional[str] = None) -> dict:
+                        model: Optional[str] = None,
+                        custom_agents: Optional[list[dict]] = None) -> dict:
     """Build the 6-lane project squad directly in kanban.db (no CLI).
 
     Same honesty contract as ``launch_swarm`` but for small-memory hosts: the
@@ -835,6 +836,10 @@ def launch_project_thin(board: str, goal: str, provider: Optional[str] = None,
     512 MB container. This writes the real squad tasks + seeds the real
     workspace (sub-second, <1 MB RSS); the thin project driver then executes
     each lane with a real provider completion.
+
+    ``custom_agents`` (P4): optional list of user-defined agents
+    ``{"id", "name", "objective", "skills"}``. Each becomes one extra queued
+    lane on the board (assignee ``ca-<id>``) executed by the thin driver.
 
     Returns a SwarmResult-shaped dict (``root_id``/``worker_ids``/
     ``verifier_id``/``synthesizer_id``) plus ``planner_id`` and ``workspace``.
@@ -860,6 +865,15 @@ def launch_project_thin(board: str, goal: str, provider: Optional[str] = None,
                 verifier_id = tid
             elif prof == SYNTHESIZER[0]:
                 synth_id = tid
+        for agent in (custom_agents or []):
+            aid = str(agent.get("id", "")).strip()
+            name = (agent.get("name") or "Custom agent").strip() or "Custom agent"
+            tid = f"t_{secrets.token_hex(4)}"
+            _demo_insert_task(c, board, task_id=tid,
+                              title=f"{name} (custom)",
+                              assignee=f"ca-{aid}" if aid else f"ca-{secrets.token_hex(3)}",
+                              status="todo")
+            ids.append(tid)
         c.commit()
     finally:
         c.close()

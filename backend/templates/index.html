@@ -203,6 +203,7 @@
   <button class="nav" id="navPricing" data-onclick="gotoSection" data-arg="pricing" data-i18n="nav_pricing">Pricing</button>
   <button class="nav" id="navRef" data-onclick="gotoSection" data-arg="referrals" data-i18n="nav_ref">Referrals</button>
   <button class="nav" id="navByok" data-onclick="gotoSection" data-arg="byok" data-i18n="nav_byok">My keys</button>
+  <button class="nav" id="navAgents" data-onclick="gotoSection" data-arg="agents" data-i18n="nav_agents">Agents</button>
   <button class="nav" id="navMarket" data-onclick="gotoSection" data-arg="market" data-i18n="nav_market">Marketplace</button>
   <button class="nav" id="navProjects" data-onclick="gotoSection" data-arg="projects" data-i18n="nav_projects">History</button>
   <button class="nav" id="navSettings" data-onclick="gotoSection" data-arg="settings" data-i18n="nav_settings">Account</button>
@@ -348,6 +349,20 @@ Bring your own provider key for the strongest output — or a free OpenRouter ke
     <div data-i18n="byok_agg_hint" style="font-size:12px;color:var(--muted)">Saved keys are locked to the current provider terms version; accepting a new version refreshes it.</div>
   </div>
 
+  <!-- CUSTOM AGENTS (P4) -->
+  <div class="card hidden" id="agents">
+    <h2 style="margin-top:0;font-size:18px" data-i18n="agents_title">🛠 Custom agents</h2>
+    <div class="hint" data-i18n="agents_hint">Define your own squad members — name, mission and skills — then attach them to any launch. Each custom agent runs as an extra lane and leaves its deliverable in your project workspace.</div>
+    <div class="row" style="margin-top:10px">
+      <div style="flex:1"><label for="ag_name" data-i18n="ag_name">Agent name</label><input id="ag_name" maxlength="80" placeholder="e.g. Security Auditor" /></div>
+      <div style="flex:1"><label for="ag_obj" data-i18n="ag_obj">Mission (what it must produce)</label><input id="ag_obj" maxlength="500" placeholder="Audit the workspace for OWASP Top 10 issues and produce a fixes report" /></div>
+    </div>
+    <label for="ag_skills" data-i18n="ag_skills">Skills (optional, comma separated)</label><input id="ag_skills" maxlength="300" placeholder="security, python, fastapi" />
+    <button class="primary" data-onclick="createAgent" data-i18n="ag_create">➕ Create agent</button>
+    <h3 style="font-size:15px;margin-top:16px" data-i18n="agents_list">My agents</h3>
+    <div class="grid" id="agentGrid"></div>
+  </div>
+
   <!-- SQUAD MARKETPLACE -->
   <div class="card hidden" id="market">
     <h2 style="margin-top:0;font-size:18px" data-i18n="market_title">🛒 Squad Marketplace</h2>
@@ -478,7 +493,7 @@ function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&l
 function t(k){const v=I18N[LANG][k];return v!==undefined?v:k;}
 function fmt(k,...args){let s=I18N[LANG][k];if(s===undefined)s=k;args.forEach(a=>{s=s.replace(/\{(\w+)\}/,a);});return s;}
 function errt(m){return m||"";}
-function gotoSection(id){["pricing","referrals","byok","market","projects","settings","results"].forEach(s=>{const el=document.getElementById(s);if(el)el.classList.toggle("hidden",s!==id);});const el=document.getElementById(id);if(el)window.scrollTo({top:el.offsetTop-60,behavior:"smooth"});}
+function gotoSection(id){["pricing","referrals","byok","agents","market","projects","settings","results"].forEach(s=>{const el=document.getElementById(s);if(el)el.classList.toggle("hidden",s!==id);});const el=document.getElementById(id);if(el)window.scrollTo({top:el.offsetTop-60,behavior:"smooth"});}
 function openAuth(){document.getElementById("authModal").classList.add("open");document.getElementById("l_email").focus();}
 function switchTab(t){document.getElementById("tabLogin").classList.toggle("active",t==="login");document.getElementById("tabReg").classList.toggle("active",t==="reg");document.getElementById("loginForm").classList.toggle("hidden",t!=="login");document.getElementById("regForm").classList.toggle("hidden",t!=="reg");}
 function dismissConsent(){localStorage.setItem("fs-consent","1");document.getElementById("consentBar").classList.remove("show");}
@@ -530,6 +545,37 @@ async function unlinkTelegram(){
   toast(ok?I18N[LANG].tg_unlinked:I18N[LANG].tg_unlink_fail);loadTelegram();
 }
 
+async function createAgent(){if(!token){openAuth();return;}
+  const name=document.getElementById("ag_name").value.trim();
+  const obj=document.getElementById("ag_obj").value.trim();
+  const skills=document.getElementById("ag_skills").value.trim();
+  if(!name||!obj){toast(t("ag_fields"));return;}
+  const r=await fetch(API+"/api/agents",{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({name,objective:obj,skills})});
+  if(!r.ok){let d=null;try{d=await r.json();}catch(e){}toast(t("ag_fail")+" "+errt((d&&d.detail)||""));return;}
+  document.getElementById("ag_name").value="";document.getElementById("ag_obj").value="";document.getElementById("ag_skills").value="";
+  toast(t("ag_created"));loadAgents();
+}
+
+async function loadAgents(){const g=document.getElementById("agentGrid");g.innerHTML='<div class="empty">Loading agents…</div>';
+  if(!token){g.innerHTML='<div class="empty">'+t("agents_login_empty")+'</div>';return;}
+  try{
+    const r=await fetch(API+"/api/agents",{headers:{Authorization:"Bearer "+token}});
+    const d=await r.json();
+    g.innerHTML="";
+    if(!d.length){g.innerHTML='<div class="empty">'+t("agents_empty")+'</div>';return;}
+    d.forEach(a=>{const div=document.createElement("div");div.className="plan";
+      div.innerHTML=`<label class="row" style="align-items:center;gap:8px"><input type="checkbox" class="agpick" data-id="${a.id}" /><div style="flex:1"><div class="pname">${esc(a.name)}</div><div class="hint">${esc(a.objective||"")}</div>${a.skills?`<div class="hint">⚙ ${esc(a.skills)}</div>`:""}</div></label><button class="ghost" data-onclick="deleteAgent" data-arg="${a.id}">${t("ag_delete")}</button>`;
+      g.appendChild(div);});
+  }catch(e){g.innerHTML='<div class="empty">Could not load agents</div>';}
+}
+
+async function deleteAgent(id){if(!token)return;
+  if(!confirm(t("ag_delete_confirm")))return;
+  const r=await fetch(API+`/api/agents/${id}`,{method:"DELETE",headers:{Authorization:"Bearer "+token}});
+  if(!r.ok){toast(t("ag_delete_fail"));return;}
+  toast(t("ag_deleted"));loadAgents();
+}
+
 async function createProject(){
   const name=document.getElementById("pname").value.trim();
   const goal=document.getElementById("pgoal").value.trim();
@@ -537,7 +583,8 @@ async function createProject(){
   if(!token){toast(t("login_first"));openAuth();return;}
   const btn=document.getElementById("createBtn");btn.disabled=true;btn.textContent=t("launching_btn");
   try{
-    const r=await fetch(API+"/api/projects",{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({name:name||t("default_project"),goal})});
+    const agent_ids=Array.from(document.querySelectorAll(".agpick:checked")).map(ch=>parseInt(ch.dataset.id,10)||0).filter(Boolean);
+    const r=await fetch(API+"/api/projects",{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({name:name||t("default_project"),goal,agent_ids})});
     if(r.status===402){toast(t("no_credits"));return;}
     if(!r.ok){toast(t("err_prefix")+errt((await r.json().catch(()=>({}))).detail||"Request failed"));return;}
     const d=await r.json();currentSlug=d.slug;loadProjects();gotoSection("boardCard");connectWS(d.slug);pollTasks(d.slug);loadWorkspace(d.slug);
@@ -782,6 +829,12 @@ const I18N = {
     market_title:"🛒 Squad Marketplace",
     market_hint:"Publish your agent lineup as a template others buy with credits, or buy a ready-made squad from the community.",
     tpl_name:"Template name", tpl_price:"Price (credits)", tpl_desc:"Description", tpl_agents:"Agents (display names, comma separated)", market_list:"Available templates",
+    nav_agents:"Agents", agents_title:"🛠 Custom agents",
+    agents_hint:"Define your own squad members — name, mission and skills — then attach them to any launch. Each custom agent runs as an extra lane and leaves its deliverable in your project workspace.",
+    ag_name:"Agent name", ag_obj:"Mission (what it must produce)", ag_skills:"Skills (optional, comma separated)",
+    ag_create:"➕ Create agent", ag_fields:"Provide a name and a mission", ag_fail:"Create agent failed", ag_created:"Agent created",
+    agents_list:"My agents", agents_empty:"No custom agents yet — create your first one above.", agents_login_empty:"Sign in to manage custom agents.",
+    ag_delete:"Delete", ag_delete_fail:"Delete failed", ag_deleted:"Agent deleted", ag_delete_confirm:"Delete this custom agent? It will be removed from your account."
     skills_lbl:"Skills:", per_pack:"one-time credit pack", credits_line:"{c} credits · parallel x{p}",
     desc_demo:"Free trial — no card required", desc_starter:"For freelancers & small projects", desc_pro:"For small teams", desc_scale:"For companies & agencies", desc_topup:"Quick refill — credits never expire",
     feat_full:"Full squad (6 agents)", feat_credit:"1 credit per launch", feat_live:"Live board stream", feat_tg:"Telegram bot",

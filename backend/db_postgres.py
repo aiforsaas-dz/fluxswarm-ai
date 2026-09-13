@@ -1204,6 +1204,54 @@ def refund_template_purchase(tid: int, buyer_id: int) -> bool:
     return _await(_refund_template_purchase(tid, buyer_id))
 
 
+# ---------- custom agents (P4) ----------
+async def _create_custom_agent(user_id: int, name: str, objective: str, skills: str = "") -> int:
+    pool = await get_pool()
+    return await pool.fetchval(
+        "INSERT INTO custom_agents (user_id,name,objective,skills,created_at) "
+        "VALUES ($1,$2,$3,$4,$5) RETURNING id",
+        user_id, name, objective, skills, int(time.time()),
+    )
+
+
+def create_custom_agent(user_id: int, name: str, objective: str, skills: str = "") -> int:
+    return _await(_create_custom_agent(user_id, name, objective, skills))
+
+
+async def _list_custom_agents(user_id: int) -> list[dict]:
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT id,name,objective,skills,created_at FROM custom_agents "
+        "WHERE user_id=$1 ORDER BY created_at DESC", user_id)
+    return [dict(r) for r in rows]
+
+
+def list_custom_agents(user_id: int) -> list[dict]:
+    return _await(_list_custom_agents(user_id))
+
+
+async def _get_custom_agent(user_id: int, aid: int) -> dict | None:
+    pool = await get_pool()
+    return _rows(await pool.fetchrow(
+        "SELECT id,name,objective,skills,created_at FROM custom_agents "
+        "WHERE user_id=$1 AND id=$2", user_id, aid))
+
+
+def get_custom_agent(user_id: int, aid: int) -> dict | None:
+    return _await(_get_custom_agent(user_id, aid))
+
+
+async def _delete_custom_agent(user_id: int, aid: int) -> bool:
+    pool = await get_pool()
+    res = await pool.execute(
+        "DELETE FROM custom_agents WHERE user_id=$1 AND id=$2", user_id, aid)
+    return res.replace("DELETE ", "").isdigit() and int(res.split()[-1]) > 0
+
+
+def delete_custom_agent(user_id: int, aid: int) -> bool:
+    return _await(_delete_custom_agent(user_id, aid))
+
+
 async def _get_user_credits(user_id: int) -> int:
     pool = await get_pool()
     val = await pool.fetchval("SELECT credits FROM users WHERE id=$1", user_id)
