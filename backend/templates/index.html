@@ -229,6 +229,8 @@
     <div class="row">
       <button class="primary" id="createBtn" data-onclick="createProject" data-i18n="btn_launch">🚀 Launch squad</button>
       <button class="ghost" data-onclick="launchDemo" data-i18n="btn_demo">▶ Free Demo</button>
+      <button class="ghost" data-onclick="pickZip">📦 Analyze project ZIP</button>
+      <input type="file" id="zipInput" accept=".zip,application/zip" style="display:none" />
     </div>
     <div class="squad-strip" aria-hidden="true">
       <span class="chip"><span class="cdot"></span>Planner</span>
@@ -546,6 +548,26 @@ async function createProject(){
 async function launchDemo(){
   const r=await fetch(API+"/api/demo/launch");const d=await r.json();currentSlug=d.slug;gotoSection("boardCard");connectWS(d.slug);pollTasks(d.slug);loadWorkspace(d.slug);toast(t("demo_running"));
 }
+
+function pickZip(){if(!token){openAuth();return;}document.getElementById("zipInput").click();}
+async function analyzeZip(){
+  if(!token){openAuth();return;}
+  const input=document.getElementById("zipInput");const file=input.files[0];
+  if(!file){toast("Select a ZIP file first.");return;}
+  if(!file.name.toLowerCase().endsWith(".zip")){toast("File must be a .zip archive.");return;}
+  const fd=new FormData();fd.append("file",file);
+  try{const r=await fetch(API+"/api/project/analyze",{method:"POST",headers:{Authorization:"Bearer "+token},body:fd});
+    if(!r.ok){toast("Analysis failed: "+errt((await r.json().catch(()=>({}))).detail||"unknown"));return;}
+    const m=await r.json();
+    const langs=m.languages.map(l=>`${l.lang} (${l.files} files)`).join(", ");
+    const fw=m.frameworks.length?m.frameworks.join(", "):"none detected";
+    const summary=`${m.files_count} files, ${m.total_lines} lines. Languages: ${langs}. Frameworks: ${fw}`;
+    toast(summary);
+    document.getElementById("pgoal").value=`Analyze the uploaded ${file.name} project (${summary}) and improve it according to the uploaded code.`;
+  }catch(e){toast("Error: "+e.message);}
+  input.value="";
+}
+document.getElementById("zipInput").addEventListener("change",analyzeZip);
 
 async function loadProjects(){
   const el=document.getElementById("projectsList");

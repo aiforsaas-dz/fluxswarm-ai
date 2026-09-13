@@ -1902,6 +1902,10 @@ def _task_activity_events(board: str, task_id: str) -> list[dict]:
             out.append({"kind": "completed", "label": label, "at": int(created_at)})
         elif kind == "failed":
             out.append({"kind": "failed", "label": "Failed", "at": int(created_at)})
+        elif kind == "note":
+            msg = (pd or {}).get("message") or "Note"
+            out.append({"kind": "note", "label": f"ℹ {str(msg)[:240]}",
+                        "at": int(created_at)})
         elif kind == "error":
             msg = (pd or {}).get("message") or kind
             out.append({"kind": "error", "label": f"Demo error: {str(msg)[:240]}",

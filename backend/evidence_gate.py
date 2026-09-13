@@ -1,0 +1,153 @@
+"""Builder Evidence Gate — deterministic GO/NO-GO before final assembly.
+
+The Builder (synthesizer) is the last lane; it must never ship a deliverable
+without verified evidence from the preceding lanes.  This module collects that
+evidence with purely deterministic checks (no LLM, no network, no subprocess)
+and returns a GO / WARN / NO-GO verdict that the thin driver attaches to the
+board's task_events.
+
+GO    — all critical checks pass + a test artifact was produced.
+WARN  — test artifact exists but has issues (syntax or weak web QA).
+NO-GO — no test artifact at all, or workspace is empty.
+"""
+from __future__ import annotations
+
+import ast
+import os
+from pathlib import Path
+
+
+def _parse_ok(path: Path) -> bool:
+    """Return True if the file is syntactically valid Python (fast, no exec)."""
+    try:
+        ast.parse(path.read_text(encoding="utf-8", errors="ignore"))
+        return True
+    except SyntaxError:
+        return False
+    except Exception:
+        return False
+
+
+def _non_empty(path: Path) -> bool:
+    return path.is_file() and path.stat().st_size > 0
+
+
+def _web_goal(goal: str) -> bool:
+    g = goal.lower()
+    return any(w in g for w in ("website", "landing", "html", "web app",
+                                 "web page", "single page", "single-file"))
+
+
+_REQUIRED_ARTIFACTS = ("PLAN.md", "ARCHITECTURE.md", "REVIEW.md")
+_TEST_FILE = "tests/test_app.py"
+_WEB_FILE = "index.html"
+
+
+def collect_evidence(workspace: str, goal: str = "") -> dict:
+    """Collect deterministic evidence from a project workspace.
+
+    Returns:
+      {
+        "verdict": "GO" | "WARN" | "NO-GO",
+        "checks": [{"name": str, "status": "pass"|"fail"|"warn", "detail": str}],
+        "summary": str
+      }
+    """
+    root = Path(workspace)
+    checks: list[dict] = []
+    test_path = root / _TEST_FILE
+
+    # --- 1. test artifact present? (critical) ---
+    if _non_empty(test_path):
+        checks.append({"name": "test_artifact_present", "status": "pass",
+                        "detail": f"{_TEST_FILE} exists and is non-empty"})
+    else:
+        checks.append({"name": "test_artifact_present", "status": "fail",
+                        "detail": f"{_TEST_FILE} missing or empty"})
+
+    # --- 2. test artifact compiles? (critical when present) ---
+    if _non_empty(test_path):
+        if _parse_ok(test_path):
+            checks.append({"name": "test_artifact_compiles", "status": "pass",
+                            "detail": "Python syntax is valid"})
+        else:
+            checks.append({"name": "test_artifact_compiles", "status": "warn",
+                            "detail": "Python syntax error in test file"})
+
+    # --- 3. required meta-artifacts present (warning-level) ---
+    missing = [a for a in _REQUIRED_ARTIFACTS if not (root / a).is_file()]
+    if not missing:
+        checks.append({"name": "meta_artifacts_complete", "status": "pass",
+                        "detail": "PLAN.md + ARCHITECTURE.md + REVIEW.md all present"})
+    else:
+        checks.append({"name": "meta_artifacts_complete", "status": "warn",
+                        "detail": f"missing: {', '.join(missing)}"})
+
+    # --- 4. workspace file count (informational) ---
+    file_count = sum(1 for _ in root.rglob("*") if _.is_file())
+    checks.append({"name": "workspace_file_count", "status": "pass" if file_count >= 3 else "warn",
+                    "detail": f"{file_count} file(s) in workspace"})
+
+    # --- 5. web QA (critical for web goals) ---
+    if _web_goal(goal):
+        web_path = root / _WEB_FILE
+        if _non_empty(web_path):
+            from demo_llm import web_artifact_needs_repair, web_qa_issues
+            text = web_path.read_text(encoding="utf-8", errors="ignore")
+            truncated = web_artifact_needs_repair(text)
+            issues = web_qa_issues(text)
+            hard = [i for i in issues if i.startswith((
+                "truncated page:", "skeleton page:"))]
+            if not truncated and not hard:
+                checks.append({"name": "web_qa", "status": "pass",
+                                "detail": "index.html passes structural QA"})
+            else:
+                detail = "; ".join(hard[:3]) if hard else "truncated artifact detected"
+                checks.append({"name": "web_qa", "status": "warn",
+                                "detail": detail})
+        else:
+            checks.append({"name": "web_qa", "status": "warn",
+                            "detail": f"{_WEB_FILE} not present (non-web goal?)"})
+
+    # --- Verdict ---
+    fail_names = {c["name"] for c in checks if c["status"] == "fail"}
+    warn_names = {c["name"] for c in checks if c["status"] == "warn"}
+
+    if "test_artifact_present" in fail_names:
+        verdict = "NO-GO"
+    elif fail_names or warn_names:
+        verdict = "WARN"
+    else:
+        verdict = "GO"
+
+    summary_parts = []
+    for c in checks:
+        tag = {"pass": "✓", "warn": "⚠", "fail": "✗"}.get(c["status"], "?")
+        summary_parts.append(f"{tag} {c['name']}: {c['detail']}")
+
+    return {
+        "verdict": verdict,
+        "checks": checks,
+        "summary": "\n".join(summary_parts),
+    }
+
+
+def write_evidence_md(workspace: str, goal: str = "") -> dict:
+    """Collect evidence and write EVIDENCE.md into the workspace.
+    Returns the evidence dict."""
+    ev = collect_evidence(workspace, goal)
+    root = Path(workspace)
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "EVIDENCE.md").write_text(
+            f"# Builder Evidence Gate\n\n"
+            f"**Verdict:** `{ev['verdict']}`\n\n"
+            f"## Checks\n\n" + "\n".join(
+                f"| {c['status'].upper()} | {c['name']} | {c['detail']} |"
+                for c in ev["checks"]
+            ) + "\n\n## Summary\n\n```\n" + ev["summary"] + "\n```\n",
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+    return ev

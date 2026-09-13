@@ -162,3 +162,16 @@ def test_websocket_socket_logged_out_rejected():
     a_slug = f"u{a['user']['id']}-proj"
     client.post("/api/auth/logout", headers={"Authorization": f"Bearer {a['token']}"})
     assert _ws_rejected(f"/ws/{a_slug}?token={a['token']}") is True
+
+
+def test_websocket_per_slug_subscriber_cap(monkeypatch):
+    a = _register("tenant-ws-cap@fluxswarm.test")
+    a_slug = f"u{a['user']['id']}-proj"
+    monkeypatch.setattr(main_mod.hc, "list_tasks", lambda s: [])
+    monkeypatch.setattr(main_mod, "_WS_MAX_SUBS_PER_SLUG", 2)
+
+    url = f"/ws/{a_slug}?token={a['token']}"
+    with client.websocket_connect(url) as ws1:
+        with client.websocket_connect(url) as ws2:
+            # A third viewer on the same board must be refused.
+            assert _ws_rejected(url) is True

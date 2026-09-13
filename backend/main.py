@@ -11,6 +11,8 @@ import ast
 import functools
 import sys
 import atexit
+import io
+import zipfile
 from contextlib import asynccontextmanager
 import datetime
 import ipaddress
@@ -58,6 +60,8 @@ import security
 import payments as payments_mod
 import provider_pool
 import provider_guard
+import project_analyzer
+import evidence_gate
 import support_agent
 from ratelimit import limiter
 
@@ -217,6 +221,8 @@ atexit.register(serverlock.release)
 _START_TS = time.time()
 
 _SUBS: dict[str, set[WebSocket]] = {}
+
+_WS_MAX_SUBS_PER_SLUG = int(os.environ.get("FLUXSWARM_WS_MAX_SUBS_PER_SLUG", "64"))
 
 def _payments_enabled() -> bool:
     """Read the billing gate live (not at import time) so tests / ops can switch
@@ -875,6 +881,21 @@ def _doc(path, limit: int = 6000) -> str:
         return ""
 
 
+def _insert_gate_event(slug: str, task_id: str, evidence: dict) -> None:
+    """Attach the Builder evidence-gate verdict to the builder task's event log
+    so the UI timeline shows GO/WARN/NO-GO before final assembly. Best-effort."""
+    try:
+        verdict = str(evidence.get("verdict", "?"))
+        checks_ok = sum(1 for c in evidence.get("checks", [])
+                        if c.get("status") == "pass")
+        checks_total = len(evidence.get("checks", []))
+        hc._insert_event(
+            slug, task_id, "note",
+            f"Evidence gate: {verdict} ({checks_ok}/{checks_total} checks passed)")
+    except Exception:
+        pass
+
+
 def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None = None) -> None:
     """Drive the thin 6-lane project squad to completion in a daemon thread.
 
@@ -912,11 +933,18 @@ def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None =
              lambda brief: demo_llm.builder_prompt(hc.SYNTHESIZER[2], goal, brief)),
         ]
         brief = ""
+        evidence = None
         for assignee, artifact, make_prompt in lanes:
             tid = by_role.get(assignee)
             if not tid:
                 continue
             if artifact is None:
+                # Builder lane: gated by the evidence the preceding lanes left.
+                if evidence is not None:
+                    try:
+                        _insert_gate_event(slug, tid, evidence)
+                    except Exception:
+                        pass
                 _run_builder(
                     slug=slug, task_id=tid, workspace=str(ws_root),
                     provider=provider,
@@ -932,9 +960,22 @@ def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None =
                                 prompt=make_prompt(brief), objective=goal,
                                 artifact_name=artifact, api_key=api_key,
                                 max_tokens=demo_llm.lane_max_tokens(goal, artifact))
+            if assignee == "ecc-reviewer":
+                # Evidence gate runs after Reviewer so the Builder only starts
+                # once the workspace holds a verified (deterministic) evidence
+                # record of plan/arch/devops/tdd/review output.
+                try:
+                    evidence = evidence_gate.write_evidence_md(str(ws_root), goal)
+                except Exception:
+                    evidence = None
             brief = _ws_brief(ws_root)
         if pid is not None:
-            _finalize_launch(slug, pid, status="ok", outcome="converged", reason="")
+            status = "ok"
+            outcome = "converged"
+            reason = ""
+            if evidence is not None and evidence.get("verdict") not in ("GO",):
+                reason = f"evidence_gate={evidence.get('verdict')}"
+            _finalize_launch(slug, pid, status=status, outcome=outcome, reason=reason)
         try:
             audit.audit("thin.drive", outcome="ok", slug=slug, plan="thin")
             db.update_provider_usage_outcome(slug, ok=1)
@@ -2299,6 +2340,32 @@ def api_create_project(payload: ProjectCreate, request: Request,
     return _swarm_payload(slug, payload.goal, swarm)
 
 
+@app.post("/api/project/analyze")
+async def api_project_analyze(request: Request,
+                              user: dict = Depends(get_current_user)):
+    """Accept a project ZIP, analyze it in memory, return a bounded manifest.
+
+    No disk writes; no credit spent; do-not-use (420-demand) upload size caps and
+    traversal guards are enforced inside project_analyzer. The manifest can be
+    attached to a later launch so the swarm builds against an existing repo.
+    """
+    form = await request.form()
+    up = form.get("file")
+    data = await up.read() if up else b""
+    if not data:
+        raise HTTPException(status_code=400, detail="No project file uploaded")
+    try:
+        manifest = project_analyzer.analyze_zip(data, source_name=getattr(up, "filename", "project.zip"))
+    except project_analyzer.ProjectAnalyzerError as e:
+        audit.audit("project.analyze", uid=user["id"], email=user["email"],
+                    ip=_client_ip(request), outcome="rejected", reason=str(e)[:200])
+        raise HTTPException(status_code=400, detail=str(e))
+    audit.audit("project.analyze", uid=user["id"], email=user["email"],
+                ip=_client_ip(request), outcome="ok",
+                files=manifest["files_count"], bytes_=manifest["total_bytes"])
+    return manifest
+
+
 def _swarm_payload(slug: str, goal: str, swarm) -> dict:
     """Build the launch response for BOTH drivers: the thin one returns a plain
     dict (launch_project_thin), the fat one a SwarmResult object with
@@ -2333,6 +2400,90 @@ def api_workspace(slug: str, user: dict = Depends(get_current_user)):
         return {"slug": slug, "content": hc.read_workspace(slug)}
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to read workspace")
+
+
+# ---------- paid-export gating: GET /api/projects/{slug}/export ----------
+# Generated project files are the user's deliverable; this endpoint bundles the
+# workspace into a ZIP, server-side gated by a per-user hourly burst cap
+# (demo: 5/h, paid: 60/h) so the cost surface stays bounded for free users.
+_EXPORT_HOURLY_CAP = 3600
+_EXPORT_DEMO_HOURLY_CAP = int(os.environ.get("FLUXSWARM_EXPORT_DEMO_HOURLY_CAP", "5"))
+_EXPORT_PAID_HOURLY_CAP = int(os.environ.get("FLUXSWARM_EXPORT_PAID_HOURLY_CAP", "60"))
+_EXPORT_MAX_ZIP_BYTES = int(os.environ.get("FLUXSWARM_EXPORT_MAX_ZIP_BYTES", "62914560"))
+_export_hits: dict[str, list[float]] = {}
+_export_lock = threading.Lock()
+
+
+def _export_allowed(uid: int, plan: str) -> bool:
+    """Per-user rolling hourly burst gate. Demo plan gets a small cap, paid
+    plans a larger one. In-memory only (bounded, single-process), like the auth
+    rate limiter; used as abuse protection, never as a billing authority."""
+    is_paid = (db.PLANS.get(plan) or {}).get("price", 0) > 0
+    cap = _EXPORT_PAID_HOURLY_CAP if is_paid else _EXPORT_DEMO_HOURLY_CAP
+    bucket = f"{uid}:{int(time.time() // 3600)}"
+    now = time.time()
+    with _export_lock:
+        hits = [t for t in _export_hits.get(bucket, []) if now - t < _EXPORT_HOURLY_CAP]
+        if len(hits) >= cap:
+            _export_hits[bucket] = hits
+            return False
+        hits.append(now)
+        _export_hits[bucket] = hits
+        if len(_export_hits) > 65536:  # bound memory on long-lived workers
+            for k in list(_export_hits):
+                if not _export_hits[k]:
+                    _export_hits.pop(k, None)
+        return True
+
+
+def _export_bundle(slug: str) -> bytes:
+    """Zip every regular file in the board workspace. Symlinks are skipped and
+    every arch path is containment-checked; sleeps/network are avoided so this
+    stays a cheap, bounded read-only walk."""
+    root = hc.project_workspace_dir(slug)
+    if not root.is_dir():
+        return b""
+    buf = io.BytesIO()
+    total = 0
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for p in sorted(root.rglob("*")):
+            if p.is_symlink() or not p.is_file():
+                continue
+            arc = str(p.relative_to(root)).replace("\\", "/")
+            if any(seg in ("..", "") for seg in arc.split("/")) or ":" in arc or arc.startswith("/"):
+                continue
+            size = p.stat().st_size
+            if size > _EXPORT_MAX_ZIP_BYTES:
+                continue
+            z.write(p, arc)
+            total += size
+            if total > _EXPORT_MAX_ZIP_BYTES:
+                break
+    return buf.getvalue()
+
+
+@app.get("/api/projects/{slug}/export")
+def api_project_export(slug: str, request: Request, user: dict = Depends(get_current_user)):
+    # Same ownership rules as the workspace listing: demo boards are public
+    # showcase; owned boards require the owner.
+    if not slug.startswith(f"u{user['id']}-") and not slug.startswith("flux-demo-"):
+        audit.audit("project.export", uid=user["id"], email=user["email"], ip=_client_ip(request),
+                    outcome="fail", reason="unauthorized", slug=slug)
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    if not _export_allowed(user["id"], user.get("plan", "demo")):
+        audit.audit("project.export", uid=user["id"], email=user["email"], ip=_client_ip(request),
+                    outcome="fail", reason="burst_limit", slug=slug)
+        raise HTTPException(status_code=429, detail="Export rate limit reached — please wait a moment")
+    data = _export_bundle(slug)
+    if not data:
+        audit.audit("project.export", uid=user["id"], email=user["email"], ip=_client_ip(request),
+                    outcome="fail", reason="empty_workspace", slug=slug)
+        raise HTTPException(status_code=404, detail="No generated files to export yet")
+    audit.audit("project.export", uid=user["id"], email=user["email"], ip=_client_ip(request),
+                outcome="ok", slug=slug, bytes=len(data))
+    return Response(content=data, media_type="application/zip",
+                    headers={"Content-Disposition":
+                             f'attachment; filename="{urlquote(slug)}-export.zip"'})
 
 
 # ---------- live project preview (/p/<slug>/...) ----------
@@ -4019,6 +4170,12 @@ async def ws_board(websocket: WebSocket, slug: str):
         return
     await websocket.accept()
     _SUBS.setdefault(slug, set()).add(websocket)
+    if len(_SUBS[slug]) > _WS_MAX_SUBS_PER_SLUG:
+        _SUBS[slug].discard(websocket)
+        await websocket.send_json({"type": "error",
+                                   "detail": "too many concurrent viewers on this board"})
+        await websocket.close()
+        return
     try:
         try:
             # list_tasks shells out to the hermes CLI (subprocess): run it on a

@@ -182,6 +182,9 @@ class TestProvisionVerifierSkill:
         )
         monkeypatch.setattr(hc_mod, "HERMES_HOME", str(home))
         monkeypatch.setattr(hc_mod, "PROFILES_DIR", home / "profiles")
+        missing_src = home / "skills" / "software-development" / hc_mod._VERIFIER_SKILL_NAME
+        monkeypatch.setattr(hc_mod, "_bundled_verifier_skill_dir", lambda: missing_src)
+        assert not missing_src.exists()
 
         with pytest.raises(RuntimeError) as ei:
             hc_mod._ensure_verifier_skill()
