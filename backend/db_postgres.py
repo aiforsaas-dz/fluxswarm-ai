@@ -150,7 +150,7 @@ async def _truncate_all() -> None:
         "TRUNCATE TABLE users, projects, referrals, squad_templates, "
         "template_purchases, payment_events, telegram_links, telegram_codes, "
         "password_resets, demo_usage, provider_agreements, admt_disclosures, "
-        "provider_usage "
+        "provider_usage, board_states, board_tasks, board_task_events, board_files "
         "RESTART IDENTITY CASCADE"
     )
 

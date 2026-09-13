@@ -29,6 +29,7 @@ from typing import Optional
 
 from provider import ProviderHealth, ProviderStatus, check_provider_health
 import demo_llm
+import board_store
 
 # HERMES_BIN is overridable via FLUXSWARM_HERMES_BIN so the same code runs on
 # Linux/Docker (e.g. /app/hermes/bin/hermes) as well as the dev Windows host.
@@ -785,6 +786,8 @@ def launch_demo_profile(board: str, goal: str, provider: Optional[str] = None,
     finally:
         c.close()
 
+    # P4/2: mirror the fresh demo board (best-effort, never blocks).
+    board_store.snapshot_board(board, kind="demo")
     return {"planner_id": planner_id, "builder_id": builder_id, "workspace": str(ws)}
 
 
@@ -877,6 +880,9 @@ def launch_project_thin(board: str, goal: str, provider: Optional[str] = None,
         c.commit()
     finally:
         c.close()
+    # P4/2: mirror the freshly-built board into Postgres so a restart before
+    # the first lane runs still shows the squad (best-effort, never blocks).
+    board_store.snapshot_board(board, kind="project")
     return {
         "root_id": None,
         "worker_ids": [ids[i] for i in range(len(SQUAD))],
@@ -1037,6 +1043,11 @@ def thin_execute(board: str, task_id: str, workspace: str, provider: str,
         reason = f"{type(exc).__name__}: {str(exc)[:300]}"
         _demo_fail_lane(board, task_id, reason)
         raise
+    finally:
+        # P4/2: mirror the board AFTER the lane lands (artifact + events too),
+        # so a mid-launch restart keeps real progress, not an empty board.
+        # Fires on success AND on failure (the failed lane is mirrored as-is).
+        board_store.snapshot_board(board)
     return {"result": summary, "artifact": str(artifact), "ok": True,
             "elapsed_s": round(time.time() - start, 1)}
 
@@ -1379,6 +1390,8 @@ def seal_board(board: str, reason: str = "launch finalized") -> dict:
         (board_dir / SEAL_MARKER_NAME).touch()
     except Exception as exc:
         report["errors"].append(f"marker: {exc}")
+    # P4/2: mirror the terminal seal so a restart doesn't resurrect a closed board.
+    board_store.snapshot_board(board)
     return report
 
 
@@ -1811,6 +1824,8 @@ def delete_demo_board(board: str) -> bool:
     try:
         if target.exists():
             shutil.rmtree(target)
+            # P4/2: drop the mirror rows so the demo board isn't restored later.
+            board_store.purge_board(board)
             return True
     except OSError:
         pass
@@ -2093,6 +2108,8 @@ def delete_boards(slugs: list[str], boards_root: Path | None = None) -> int:
         try:
             if target.exists():
                 shutil.rmtree(target)
+                # P4/2: drop the mirror rows so account erasure is complete.
+                board_store.purge_board(slug)
                 removed += 1
         except OSError:
             continue

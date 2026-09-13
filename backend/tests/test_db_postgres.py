@@ -70,14 +70,14 @@ def test_pool_connects_and_defaults(loop):
 def test_migrations_are_idempotent():
     pg.init_db()
     pg.init_db()
-    # 001 -> 007 applied exactly once; HEAD is 007 (custom_agents data model).
+    # 001 -> 008 applied exactly once; HEAD is 008 (board persistence mirror).
 
     async def ver():
         pool = await pg.get_pool()
         rows = await pool.fetch("SELECT version_num FROM alembic_version")
         return [r["version_num"] for r in rows]
 
-    assert asyncio.run_coroutine_threadsafe(ver(), pg._loop()).result() == ["007"]
+    assert asyncio.run_coroutine_threadsafe(ver(), pg._loop()).result() == ["008"]
 
 
 # ---------- users CRUD / auth ----------

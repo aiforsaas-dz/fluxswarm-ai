@@ -211,6 +211,47 @@ def test_bg_thin_project_error_finalizes_and_never_raises(monkeypatch, tmp_path)
     assert finalized.get("outcome") == "launch_error"
 
 
+def test_bg_thin_project_skips_already_done_lanes(monkeypatch, tmp_path):
+    """P4/2 resume: when a restored board survived a restart with some lanes
+    already terminal ('done'), the driver MUST NOT re-execute them — only the
+    lanes that were still queued/running drive again."""
+    _host(monkeypatch, tmp_path)
+    hc.launch_project_thin("u1-resume", "Build a REST API")
+    # Simulate a mid-launch kill: Planner + Architect completed before the host
+    # died; the mirrored board restores exactly this queue.
+    c = sqlite3.connect(str(hc._board_db_path("u1-resume")))
+    try:
+        c.execute("UPDATE tasks SET status='done', result='x' "
+                  "WHERE assignee IN ('ecc-planner','ecc-architect')")
+        c.commit()
+    finally:
+        c.close()
+
+    by_role = {t["assignee"]: t["id"] for t in hc.list_tasks("u1-resume")}
+    ran: list[str] = []
+
+    def fake_execute(**kw):
+        ran.append(kw["task_id"])
+        return {"ok": True, "result": "done", "artifact": str(kw["artifact_name"]),
+                "elapsed_s": 1}
+
+    finalized = {}
+    monkeypatch.setattr(main_mod.hc, "thin_execute", fake_execute)
+    monkeypatch.setattr(main_mod.provider_pool, "pick_demo_provider",
+                        lambda: {"provider": "google", "model": "gemini-3.5-flash-lite"})
+    monkeypatch.setattr(main_mod, "_finalize_launch",
+                        lambda slug, pid, **kw: finalized.update(kw))
+    monkeypatch.setattr(main_mod.audit, "audit", lambda **k: None)
+    monkeypatch.setattr(main_mod.db, "update_provider_usage_outcome", lambda *a, **k: None)
+
+    main_mod._bg_thin_project("u1-resume", "Build a REST API", pid=9)
+
+    # Only the 4 unfinished lanes re-run; Planner/Architect stay untouched.
+    assert sorted(ran) == sorted(by_role[a] for a in
+                                  ["ecc-devops", "ecc-tdd", "ecc-reviewer", "ecc-build-fixer"])
+    assert finalized.get("status") == "ok"
+
+
 def test_swarm_payload_maps_dict_and_result_object():
     """The launch response must survive BOTH drivers: thin (plain dict) and fat
     (SwarmResult object). Before the fix, thin hosts raised

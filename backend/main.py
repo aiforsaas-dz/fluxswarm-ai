@@ -63,6 +63,7 @@ import provider_guard
 import project_analyzer
 import evidence_gate
 import support_agent
+import board_store
 from ratelimit import limiter
 
 BASE = Path(__file__).resolve().parent
@@ -84,6 +85,23 @@ async def _lifespan(app: FastAPI):
         db.seed_demo()
     except Exception as e:
         print(f"[lifespan] db.seed_demo() failed: {e}", flush=True)
+    # P4/2: restore boards whose SQLite state was wiped by a free-tier restart
+    # (cold starts do NOT keep local disk). Runs BEFORE the reaper starts so a
+    # restored board is immediately visible and re-dispatchable. Best-effort —
+    # a restore failure must never block the app from serving traffic.
+    try:
+        restored = board_store.restore_missing_boards()
+        if restored:
+            print(f"[lifespan] restored {restored} board(s) from Postgres mirror", flush=True)
+    except Exception as e:
+        print(f"[lifespan] board restore failed: {e}", flush=True)
+    # P4/2 resume: restored boards that were mid-launch when the host died need
+    # the thin driver re-fired (the host reaper is disabled on thin hosts). The
+    # driver's skip-done guard keeps anything already completed untouched.
+    try:
+        _resume_restored_thin_boards()
+    except Exception as e:
+        print(f"[lifespan] thin resume failed: {e}", flush=True)
     # Start the persistent reconciliation reaper once the server is up (NOT at
     # import, so a pytest import of this module never launches the loop).
     threading.Thread(target=_reaper_loop, daemon=True).start()
@@ -948,9 +966,27 @@ def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None =
         ]
         brief = ""
         evidence = None
+        # P4/2 resume: after a restart restored a mid-launch board, keep AT LEAST
+        # the state it already reached — a lane whose task is terminal ('done')
+        # is not re-executed (its artifact stays), so a resumed run only drives
+        # the lanes that were still queued/running when the host died.
+        done_tids: set[str] = set()
+        for t in (hc.list_tasks(slug) or []):
+            if (t.get("status") or t.get("state")) == "done":
+                tid = t.get("id")
+                if tid:
+                    done_tids.add(tid)
         for assignee, artifact, make_prompt in lanes:
             tid = by_role.get(assignee)
             if not tid:
+                continue
+            if tid in done_tids:
+                if assignee == "ecc-reviewer":
+                    try:
+                        evidence = evidence_gate.write_evidence_md(str(ws_root), goal)
+                    except Exception:
+                        evidence = None
+                brief = _ws_brief(ws_root)
                 continue
             if artifact is None:
                 # Builder lane: gated by the evidence the preceding lanes left.
@@ -1138,6 +1174,64 @@ def _demo_lifecycle_sweep() -> None:
                         audit.audit("demo.cleanup", slug=slug, age=int(age_s), outcome="ok")
             except Exception:
                 pass
+    except Exception:
+        pass
+
+
+def _resume_restored_thin_boards() -> None:
+    """Re-drive restored project boards that were mid-launch at the last death.
+
+    Only meaningful on thin hosts (project mode == thin), where EVERY launch is
+    owned by an in-process driver thread the OS killed with the host; the
+    reaper is deliberately disabled there. After a restart restored those
+    boards from the Postgres mirror, each unfinished non-sealed project board
+    whose launch never finalized is resumed with a *resumed* flag so the driver
+    (skip-done guard active) only completes the lanes that were queued/running.
+    Demo boards stay excluded — the demo lifecycle sweep owns them.
+    """
+    if not hc.projects_are_thin():
+        return
+    if not board_store.is_enabled():
+        return
+    try:
+        for slug in board_store.list_mirrored_slugs():
+            if slug.startswith("flux-demo-"):
+                continue
+            try:
+                if _board_finalized(slug) or hc.board_is_sealed(slug):
+                    continue
+                if not hc.board_has_unfinished_work(slug):
+                    continue
+                proj = _project_by_board_slug(slug)
+                goal = (proj or {}).get("goal") or ""
+                if not goal:
+                    continue
+                keys = _user_provider_keys({"id": (proj or {}).get("user_id")})
+                # Derive the custom-agent lanes that were restored with the board
+                # (assignee ``ca-<id>``); the driver's own skip-done guard keeps
+                # any ca-* lane already completed untouched.
+                custom_agents: list[dict] = []
+                for t in (hc.list_tasks(slug) or []):
+                    a = (t.get("assignee") or "").strip()
+                    if not a.startswith("ca-"):
+                        continue
+                    if (t.get("status") or t.get("state")) == "done":
+                        continue
+                    aid = a[len("ca-"):]
+                    title = (t.get("title") or aid).replace(" (custom)", "").strip()
+                    custom_agents.append({"id": aid, "name": title or "Custom agent",
+                                          "objective": goal, "skills": ""})
+                threading.Thread(
+                    target=_bg_thin_project, args=(slug, goal),
+                    kwargs={"provider_keys": keys, "pid": (proj or {}).get("id"),
+                            "custom_agents": custom_agents},
+                    daemon=True).start()
+                try:
+                    audit.audit("thin.resume", slug=slug, goal=goal[:200], outcome="ok")
+                except Exception:
+                    pass
+            except Exception:
+                continue
     except Exception:
         pass
 
