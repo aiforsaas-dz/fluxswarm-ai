@@ -18,6 +18,75 @@ import hermes_client as hc
 import demo_llm
 
 
+# A genuine design-system CSS block that passes the visual QA gate.  Used by
+# fixtures whose *content* (not styling) is under test, so visual issues never
+# mask the structural/hollow assertions those tests lock.
+_CSS_FOUNDATION = (
+    "<style>:root{--bg:#0b0f1a;--surface:#151b2b;--text:#eef1fb;--muted:#a7b0c8;"
+    "--accent:#6366f1;--accent-2:#22d3ee;--border:#232a3b;--radius:14px;"
+    "--shadow:0 8px 24px rgba(0,0,0,.25)}"
+    "body{background:var(--bg);color:var(--text);font-family:system-ui;margin:0}"
+    "nav{position:sticky;top:0;padding:16px 24px}"
+    "h1{font-size:clamp(2rem,5vw,3.2rem)}"
+    ".hero{background:linear-gradient(135deg,var(--accent),var(--accent-2));padding:90px 24px}"
+    ".btn{padding:12px 22px;border-radius:12px;background:var(--accent);color:#fff;"
+    "text-decoration:none;box-shadow:var(--shadow)}"
+    "section{padding:90px 24px}.cards{display:grid;gap:20px}"
+    ".card{border-radius:var(--radius);background:var(--surface);border:1px solid var(--border);padding:22px}"
+    "footer{padding:30px;background:var(--surface)}</style>"
+)
+
+
+def _styled_body(inner: str, brand: str = "Nebula") -> str:
+    """A visually-polished page shell around arbitrary body content."""
+    return ("<!doctype html><html lang='en'><head><title>" + brand +
+            "</title>" + _CSS_FOUNDATION + "</head><body>" + inner +
+            "</body></html>")
+
+
+# A genuinely designed single-file page that must pass the full visual QA gate
+# (>=6 CSS rules, >=3 palette colors, border-radius, gradient/shadow, CTA
+# buttons, nav/footer/h1, filled sections, closing </html>).
+def _polished_page(brand: str = "Nebula") -> str:
+    return (
+        "<!doctype html><html lang='en'><head><title>" + brand + "</title></head>"
+        "<body id='top'><style>"
+        ":root{--bg:#0b0f1a;--surface:#151b2b;--text:#eef1fb;--muted:#a7b0c8;"
+        "--accent:#6366f1;--accent-2:#22d3ee;--border:#232a3b;--radius:14px;"
+        "--shadow:0 8px 24px rgba(0,0,0,.25)}"
+        "body{background:var(--bg);color:var(--text);font-family:system-ui;"
+        "margin:0;line-height:1.55}"
+        "nav{position:sticky;top:0;padding:16px 24px;background:rgba(11,15,26,.8)}"
+        "nav a{color:var(--text);text-decoration:none;margin-right:18px;font-weight:600}"
+        "h1{font-size:clamp(2.2rem,5vw,3.4rem);line-height:1.1}"
+        ".hero{background:linear-gradient(135deg,var(--accent),var(--accent-2));"
+        "padding:96px 24px;text-align:center}"
+        ".hero h1{color:#fff}"
+        ".btn{display:inline-block;padding:12px 22px;border-radius:12px;"
+        "background:var(--accent);color:#fff;text-decoration:none;"
+        "box-shadow:var(--shadow);border:1px solid var(--border)}"
+        ".btn:hover{transform:translateY(-2px)}"
+        "section{padding:96px 24px}"
+        ".cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px}"
+        ".card{border-radius:var(--radius);background:var(--surface);"
+        "border:1px solid var(--border);padding:22px;box-shadow:var(--shadow)}"
+        "footer{padding:32px;background:var(--surface);color:var(--muted);text-align:center}"
+        "</style>"
+        "<nav><a href='#features'>Features</a><a href='#pricing'>Pricing</a></nav>"
+        "<main><section class='hero' id='features'><h1>" + brand +
+        "</h1><p>Everything your team needs.</p>"
+        "<a href='#pricing' class='btn'>Get started</a>"
+        "<a href='#features' class='btn'>Learn more</a>"
+        + "<p>" + "x" * 400 + "</p>" * 2 +
+        "</section><section id='pricing'><div class='cards'>"
+        "<div class='card'><h2>Starter</h2>" + "<p>" + "y" * 300 + "</p>" * 2 +
+        "<button class='btn'>Choose Starter</button></div>"
+        "<div class='card'><h2>Pro</h2>" + "<p>" + "z" * 300 + "</p>" * 2 +
+        "<button class='btn'>Choose Pro</button></div></div></section>"
+        "</main><footer>" + brand + " 2026</footer></body></html>"
+    )
+
+
 def _mk_demo_board(tmp_path, monkeypatch, board="bdemo", task_ids=("t1",)):
     """Point HERMES_HOME at a temp sandbox and create a real board DB with
     generic 'ready' tasks (the launch_demo_profile shape minus the graph)."""
@@ -169,10 +238,7 @@ def test_web_qa_issues_detect_broken_and_sandbox_broken_pages():
     assert "lorem ipsum" in joined
     assert demo_llm.web_qa_should_repair(issues) is True
 
-    good = ("<!doctype html><html lang='en'><head><title>N</title></head><body>"
-            "<nav><a href='#features'>F</a></nav>"
-            f"<section id='features'><h1>N</h1>{('<p>' + 'x' * 900 + '</p>') * 2}"
-            "</section><footer>N 2026</footer></body></html>")
+    good = _polished_page()
     assert demo_llm.web_qa_issues(good) == []
 
 
@@ -374,14 +440,17 @@ def test_demo_drive_builder_lane_runs(monkeypatch, tmp_path):
 
     def fake_execute(*, board, task_id, workspace, provider, model, prompt,
                      objective="", artifact_name=None, api_key=None, max_tokens=None):
-        (Path(workspace) / artifact_name).write_text(
-            ("<!doctype html><html><head><style>body{background:#0b0f1a;"
-             "color:#eef1fb}</style></head><body><nav><a href='#f'>F</a></nav>"
-             "<section id='f'><h1>Nebula</h1>"
-             + ("<p>" + "x" * 300 + "</p>") * 2 +
-             "</section><footer>Nebula 2026</footer></body></html>")
-            if artifact_name == "index.html" else "plan: build the landing page",
-            encoding="utf-8")
+        if artifact_name == "index.html":
+            (Path(workspace) / artifact_name).write_text(
+                _styled_body(
+                    "<nav><a href='#f'>F</a></nav>"
+                    "<section id='f'><h1>Nebula</h1>"
+                    + ("<p>" + "x" * 300 + "</p>") * 2 +
+                    "</section><footer>Nebula 2026</footer>"),
+                encoding="utf-8")
+        else:
+            (Path(workspace) / artifact_name).write_text(
+                "plan: build the landing page", encoding="utf-8")
         return {"ok": True, "elapsed_s": 1}
 
     monkeypatch.setattr(main_mod.hc, "thin_execute", fake_execute)
@@ -408,11 +477,11 @@ def test_run_builder_accepts_demo_call_shape(monkeypatch, tmp_path):
                      objective="", artifact_name=None, api_key=None, max_tokens=None):
         calls["max_tokens"] = max_tokens
         (Path(workspace) / artifact_name).write_text(
-            ("<!doctype html><html><head><style>body{background:#0b0f1a;"
-             "color:#eef1fb}</style></head><body><nav><a href='#f'>F</a></nav>"
-             "<section id='f'><h1>Nebula</h1>"
-             + ("<p>" + "x" * 300 + "</p>") * 2 +
-             "</section><footer>Nebula 2026</footer></body></html>"),
+            _styled_body(
+                "<nav><a href='#f'>F</a></nav>"
+                "<section id='f'><h1>Nebula</h1>"
+                + ("<p>" + "x" * 300 + "</p>") * 2 +
+                "</section><footer>Nebula 2026</footer>"),
             encoding="utf-8")
         return {"ok": True, "elapsed_s": 1}
 
@@ -463,11 +532,7 @@ def test_plan_to_brief_parses_json_with_and_without_fences():
 
 
 def test_web_qa_unlinked_sections_and_score(monkeypatch, tmp_path):
-    coherent = ("<!doctype html><html><head><style>body{background:#0b0f1a;"
-                "color:#eef1fb}</style></head><body><nav>"
-                "<a href='#features'>F</a></nav><section id='features'>"
-                "<h1>Nebula</h1>" + ("<p>" + "x" * 300 + "</p>") * 3 +
-                "</section><footer>N 2026</footer></body></html>")
+    coherent = _polished_page()
     assert not any("unlinked" in i for i in demo_llm.web_qa_issues(coherent))
     assert demo_llm.web_deliverable_score(coherent) >= 70
 
@@ -513,12 +578,13 @@ def test_run_builder_repairs_then_reaudits_broken_deliverable(monkeypatch, tmp_p
                     encoding="utf-8")  # first build is truncated
             else:
                 (Path(workspace) / artifact_name).write_text(
-                    ("<!doctype html><html><head><style>body{background:#0b0f1a;"
-                     "color:#eef1fb}</style></head><body><nav><a href='#f'>F</a></nav>"
-                     "<section id='f'><h1>Nebula</h1>"
-                     + ("<p>" + "x" * 300 + "</p>") * 2 +
-                     "</section><footer>Nebula 2026</footer></body></html>"),
-                    encoding="utf-8")
+                        _styled_body(
+                            "<nav><a href='#f'>F</a></nav>"
+                            "<section id='f'><h1>Nebula</h1>"
+                            + ("<p>" + "x" * 300 + "</p>") * 2 +
+                            "</section><footer>Nebula 2026 "
+                            "<button class='btn'>Join</button></footer>"),
+                        encoding="utf-8")
         else:
             (Path(workspace) / artifact_name).write_text("plan", encoding="utf-8")
         return {"ok": True, "elapsed_s": 1}
@@ -625,12 +691,11 @@ def test_run_builder_anchor_patch_fixes_dead_link_without_rebuild(monkeypatch, t
                      objective="", artifact_name=None, api_key=None, max_tokens=None):
         calls.append(artifact_name)
         (Path(workspace) / artifact_name).write_text(
-            ("<!doctype html><html><head><style>body{background:#0b0f1a;"
-             "color:#eef1fb}</style></head><body><nav>"
-             "<a href='#'>Home</a><a href='#features'>F</a></nav>"
-             "<section id='features'><h1>Nebula</h1>"
-             + ("<p>" + "x" * 300 + "</p>") * 2 +
-             "</section><footer>N 2026</footer></body></html>"),
+            _styled_body(
+                "<nav><a href='#'>Home</a><a href='#features'>F</a></nav>"
+                "<section id='features'><h1>Nebula</h1>"
+                + ("<p>" + "x" * 300 + "</p>") * 2 +
+                "</section><footer>N 2026 <button class='btn'>Go</button></footer>"),
             encoding="utf-8")
         return {"ok": True, "elapsed_s": 1}
 
@@ -682,15 +747,14 @@ def test_web_content_gap_detects_empty_promised_sections():
 def test_web_qa_skeleton_shell_vs_real_page():
     # Skeleton: >500 chars, has nav + h1 + footer, but sections hold only
     # brief headings (not enough body text).  "too short" and "no readable
-    # text" must NOT fire — only hollow/skeleton should appear.
-    pad = "/*p*/" * 100  # pushes total >500 chars without adding visible text
-    shell = ("<!doctype html><html><head><style>body{background:#0b0f1a;"
-             "color:#eef1fb}" + pad + "</style></head><body>"
-             "<nav><a href='#a'>A</a><a href='#b'>B</a></nav>"
-             "<h1>Title</h1>"
-             "<section id='a'><h2>Section A</h2>" + "x" * 60 +
-             "</section><section id='b'><h2>Section B</h2>" + "y" * 60 +
-             "</section><footer>N 2026</footer></body></html>")
+    # text" must NOT fire — only hollow/skeleton should appear.  The shell is
+    # visually designed (styled body) so the content gap is the ONLY issue.
+    shell = _styled_body(
+        "<nav><a href='#a'>A</a><a href='#b'>B</a></nav>"
+        "<h1>Title</h1>"
+        "<section id='a'><h2>Section A</h2>" + "x" * 60 +
+        "</section><section id='b'><h2>Section B</h2>" + "y" * 60 +
+        "</section><footer>N 2026 <button class='btn'>Go</button></footer>")
     joined = "\n".join(demo_llm.web_qa_issues(shell))
     assert "skeleton page" in joined
     assert demo_llm.web_qa_structural_repair(demo_llm.web_qa_issues(shell)) is False
@@ -711,15 +775,14 @@ def test_run_builder_content_patch_fills_missing_sections(monkeypatch, tmp_path)
     calls = []
     # starters is genuinely filled (builder wrote that section fully);
     # mains and desserts are empty shells (heading only).
-    shell = ("<!doctype html><html><head><style>body{background:#0b0f1a;"
-             "color:#eef1fb}</style></head><body><nav>"
-             "<a href='#starters'>S</a><a href='#mains'>M</a>"
-             "<a href='#desserts'>D</a></nav>"
-             "<section id='starters'><h1>Menu</h1>"
-             + ("<p>" + "x" * 300 + "</p>") * 3 +
-             "</section><section id='mains'><h2>Mains</h2></section>"
-             "<section id='desserts'><h2>Desserts</h2></section>"
-             "<footer>N 2026</footer></body></html>")
+    shell = _styled_body(
+        "<nav><a href='#starters'>S</a><a href='#mains'>M</a>"
+        "<a href='#desserts'>D</a></nav>"
+        "<section id='starters'><h1>Menu</h1>"
+        + ("<p>" + "x" * 300 + "</p>") * 3 +
+        "</section><section id='mains'><h2>Mains</h2></section>"
+        "<section id='desserts'><h2>Desserts</h2></section>"
+        "<footer>N 2026 <button class='btn'>Order</button></footer>")
 
     def fake_execute(*, board, task_id, workspace, provider, model, prompt,
                      objective="", artifact_name=None, api_key=None, max_tokens=None):

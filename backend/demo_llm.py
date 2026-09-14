@@ -23,10 +23,11 @@ _OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 _COMPLETION_TIMEOUT_S = int(os.environ.get("FLUXSWARM_DEMO_LLM_TIMEOUT_S", "300"))
 
-# A full landing page / web app rarely fits in the 400-token lane default; the
-# builder lane (the artifact the user actually sees in /p/) gets a much larger
-# output budget. Operators cap it per-env. 3000 tokens ≈ 2-4k words of HTML.
-_BUILDER_MAX_TOKENS = int(os.environ.get("FLUXSWARM_BUILDER_MAX_TOKENS", "3000"))
+# The builder lane (the artifact the user actually sees in /p/) gets a much
+# larger output budget: a Lovable-quality single-file page needs a rich design
+# system + real copy. 8000 tokens ≈ a complete styled page with palette, cards,
+# buttons and shapes. Operators cap it per-env.
+_BUILDER_MAX_TOKENS = int(os.environ.get("FLUXSWARM_BUILDER_MAX_TOKENS", "8000"))
 # Generic (non-web) build deliverables (app.py, README.md, …) get an upgraded
 # dedicated budget so real project code comes back COMPLETE, not truncated.
 # The short plan/arch/devops/tdd/review lanes keep the lean default.
@@ -51,15 +52,50 @@ _HTTP_CODE_RE = re.compile(r" HTTP (\d{3}):")
 
 # Objectives that describe a browsable website/web app should produce a single
 # self-contained index.html — the project preview (/p/<slug>/) then renders it
-# as a live Lovable-style page instead of a plain file listing.
+# as a live Lovable-style page instead of a plain file listing.  The hints are
+# intentionally multilingual (EN/AR/FR/ES/PT/TR/ID/DE/HI/ZH...) because goals
+# are written by real people in their own language — an Arabic "موقع ويب" must
+# take the same web path as an English "website".
 _WEB_HINTS = (
+    # English
     "web app", "webapp", "web application", "website", "web page", "webpage",
     "landing", "landingpage", "landing page", "single-page", "spa", "dashboard",
     "frontend", "portfolio", "saas", " ui", "ui ", " ecommerce", "menu",
     "restaurant", "cafe", "café", "bakery", "dishes", "pricing", "catalog",
     "catalogue", "store", "storefront", "shop", "booking", "reservation",
     "blog", "gallery", "template", "marketing", "agency", "startup",
-    "ordering", "takeaway", "e-commerce", "store page",
+    "ordering", "takeaway", "e-commerce", "store page", "website ", "app page",
+    # Arabic
+    "موقع", "موقع ويب", "صفحة", "صفحة هبوط", "صفحة رئيسية", "لاندينغ",
+    "لاندنج", "واجهة", "تطبيق ويب", "ويب", "متجر", "نشاط تجاري", "مطعم",
+    "مقهى", "كافيه", "المطعم", "قائمة طعام", "المينو", "حجوزات", "صور",
+    "فهرس", "تعريفي", "موقع تعريفي", "بورتفوليو", "أعمال", "سايت", "قالب",
+    # Español / Français / Português
+    "página web", "sitio web", "landing", "tienda", "restaurante", "cafetería",
+    "aplicación web", "page d'accueil", "site web", "boutique", "restaurant",
+    "application web", "página de destaque", "site de venda", "loja",
+    # Türkçe / Italiano / Deutsch
+    "web sitesi", "site", "restoran", "kafe", "mağaza", "web sitesi satır",
+    "sito web", "pagina", "negozio", "ristorante", "website", "webseite",
+    "shop", "menü", "restaurant", "café",
+    # Hinglish / Filipino / Bahasa / हिन्दी / 中文 / 日本語 / 한국어 / Русский / polski
+    "वेबसाइट", "वेब पेज", "लैंडिंग पेज", "वेब एप", "网站", "网页", "落地页",
+    "ホームページ", "ランディングページ", "웹사이트", "웹 페이지", "веб-сайт",
+    "веб-страница", "страница", "strona internetowa", "начиная страница",
+    "مصر", "مصر واجهة",
+)
+
+# Stronger single-token catch-alls that almost always mean a browsable page.
+_WEB_STRONG_HINTS = (
+    "http", "html", "الموقع", "موقع", "صفحة", "ويب", "متجر", "مقهى", "مطعم",
+    "redesign my website", "style",
+)
+
+# Every objective carries at least one of these words → there's a non-trivial
+# chance the user wants a visible page even without an explicit 'web' word
+# (common Arabic phrasing: "صمم لي منصة", "اعمل صفحة فعاليات").
+_WEB_WEAK_HINTS = (
+    "موقع", "صفحة", "منصة", "متجر", "نافذة", "واجهة مستخدم", "ui",
 )
 
 
@@ -173,7 +209,12 @@ def completion(provider: str, model: str, prompt: str, max_tokens: int = 400,
 
 def _is_web_objective(objective: str) -> bool:
     lower = (objective or "").lower()
-    return any(h in lower for h in _WEB_HINTS)
+    if any(h in lower for h in _WEB_HINTS):
+        return True
+    # Strong signals override a NO answer regardless of language.
+    if any(h in lower for h in _WEB_STRONG_HINTS):
+        return True
+    return False
 
 
 def builder_max_tokens(objective: str = "") -> int:
@@ -317,20 +358,30 @@ def builder_prompt(task_title: str, objective: str, plan: str,
 
 
 _WEB_BUILD_SPEC = (
-    "DESIGN SYSTEM (apply it expertly):\n"
-    "- Define CSS custom properties up front: --bg, --surface, --text, --muted, "
-    "--accent, --accent-2, --border, --radius, --shadow. Choose ONE deliberate, "
-    "coherent palette that fits the brand (monochrome base + 1-2 accents; dark "
-    "or light theme picked intentionally). Body text must keep WCAG AA contrast. "
-    "NEVER render dark-on-dark or light-on-light: any dark background must be "
-    "paired with an explicit light text color on the SAME selector, and every "
-    "CSS variable you reference must be defined (with a fallback).\n"
+    "TARGET: produce a MODERN, fully-styled, polished page that looks like a "
+    "professional product (Lovable / Vercel / Stripe-tier), NEVER plain text, "
+    "NEVER an unstyled black-on-white block of writing. A page with zero "
+    "palette variance, no buttons, no shapes and no spacing FAILS.\n"
+    "VISUAL FOUNDATION (non-negotiable):\n"
+    "- Exactly ONE <style> block holding the ENTIRE design system; define CSS "
+    "custom properties up front: --bg, --surface, --text, --muted, --accent, "
+    "--accent-2, --border, --radius, --shadow. Use AT LEAST 3 distinct colors "
+    "(background vs text vs at least one vibrant accent), and a second accent "
+    "tone for gradients.\n"
+    "- Shapes & polish: every card/button gets border-radius (12-16px cards, "
+    "10-14px buttons), cards get hairline border + soft box-shadow, and the "
+    "hero section carries a linear-gradient or a radial color wash so the top "
+    "of the page is visibly designed.\n"
+    "- Buttons & controls (mandatory): at least two visible CALL-TO-ACTION "
+    "buttons in the hero (primary solid accent + secondary outline/bordered), "
+    "plus per-section action links/buttons. Buttons must have hover + focus "
+    "states and real content (never href=\"#\" placeholders).\n"
     "- Typography: system-ui font stack, a clear type scale using clamp() for "
     "the hero title, line-height 1.55 body / 1.1 headings, paragraphs capped at "
     "~70ch.\n"
-    "- Layout & shapes: a centered container (~1140px max), one consistent "
-    "spacing rhythm, section padding ~96-120px desktop / 56-64px mobile; cards "
-    "in an auto-fit grid with 12-16px radius, hairline border and soft shadow.\n"
+    "- Layout & rhythm: centered container (~1140px max), one consistent "
+    "spacing system, section padding ~96-120px desktop / 56-64px mobile; "
+    "feature/testimonial/pricing content in auto-fit grids of cards.\n"
     "- NAV/ANCHOR CONTRACT: every nav item renders an <a href=\"#id\"> and a "
     "unique id=\"id\" exists on its target section; nav covers ALL major "
     "sections; no href=\"#\" placeholders.\n"
@@ -338,6 +389,13 @@ _WEB_BUILD_SPEC = (
     "gentle fade/slide reveals — all respecting prefers-reduced-motion.\n"
     "- Responsive: mobile hamburger menu with a working toggle, clamp() "
     "everywhere, zero horizontal scroll.\n"
+    "DESIGN SYSTEM (apply it expertly):\n"
+    "- Choose ONE deliberate, coherent palette that fits the brand (monochrome "
+    "base + 1-2 accents; dark or light theme picked intentionally). Body text "
+    "must keep WCAG AA contrast. NEVER render dark-on-dark or light-on-light: "
+    "any dark background must be paired with an explicit light text color on "
+    "the SAME selector, and every CSS variable you reference must be defined "
+    "(with a fallback).\n"
     "STRUCTURE (adapt to the objective but keep the pattern): sticky translucent "
     "header with nav, hero (headline, one-liner, primary + secondary CTA), "
     "features grid, testimonials or stats, pricing (if relevant), FAQ accordion, "
@@ -350,7 +408,7 @@ _WEB_BUILD_SPEC = (
     "gradients only.\n"
     "- ANTI-HALLUCINATION: never invent real addresses, phone numbers, emails, "
     "real companies, or quotes attributed to real people; invent plausible "
-    "fictional details only. Every href="#..." must target a real section id; "
+    "fictional details only. Every href=\"#...\" must target a real section id; "
     "no dead buttons.\n"
     "- SANDBOX: the page renders as a standalone HTML file inside a sandboxed "
     "iframe — do NOT use localStorage, sessionStorage, cookies, or fetch; keep "
@@ -477,6 +535,39 @@ def web_qa_issues(html: str) -> list[str]:
             issues.append(f"sandbox-unsafe: uses {label} (breaks inside the preview iframe)")
     for m in set(re.findall(r'(?:src|href)\s*=\s*["\']https?://', low)):
         issues.append(f"external resource referenced ({m}) — must be inline")
+    # ---- visual-design audit: a plain text wall is a failed deliverable ----
+    style_count = len(css_blocks)
+    if style_count == 0:
+        issues.append("no <style> block at all — page renders as unstyled plain text")
+    else:
+        css_body = "\n".join(css_blocks)
+        # ~2 rules per line heuristic; <8 rules ≈ only bare defaults.
+        rule_count = max(1, len([b for _, b in _style_blocks(css_body)]))
+        if rule_count < 6:
+            issues.append(f"unstyled page: only {rule_count} CSS rules — no design "
+                          "system, colors or shapes")
+    accent_colors = len({c.lower() for c in _HEX_COLOR_RE.findall(css_text)})
+    for _rgb in re.findall(r"rgba?\s*\(\s*\d+\s*,\s*\d+\s*,\s*\d+", css_text):
+        accent_colors += 1
+    for _named in ("white", "black", "navy", "slate", "indigo", "purple",
+                   "blue", "cyan", "teal", "green", "amber", "orange",
+                   "red", "pink", "fuchsia", "gray", "grey"):
+        if re.search(rf"\b{_named}\b", css_text):
+            accent_colors += 1
+    if accent_colors < 3:
+        issues.append(f"flat palette: only {accent_colors} color(s) in CSS — the "
+                      "page needs a real color scheme (bg/text/accent)")
+    if not re.search(r"border-radius", css_text):
+        issues.append("no rounded corners anywhere (border-radius) — cards/buttons "
+                      "have no shape, the layout looks like plain text")
+    if not re.search(r"linear-gradient|radial-gradient|box-shadow|background:\s*linear", css_text):
+        issues.append("no gradients or shadows — buttons/cards are flat, the page "
+                      "looks unstyled")
+    button_count = len(re.findall(r"<button\b", low)) + len(
+        re.findall(r'''\bclass="?[^"']*\b(?:btn|button|cta|primary)\b''', low))
+    if button_count == 0:
+        issues.append("no buttons/CTAs (<button> or .btn/.cta/.primary) — the "
+                      "page has no interactive actions")
     if re.search(r'''href=["']#["']''', text):
         issues.append("dead link: href='#' (no target)")
     ids = set(re.findall(r'''id=["']([^"']+)["']''', text))
@@ -645,7 +736,10 @@ def web_deliverable_score(html: str) -> int:
 _HARD_QA_PREFIXES = ("truncated", "too short", "broken anchor", "sandbox-unsafe",
                      "external resource", "dead link", "no closing",
                      "dark background", "undefined CSS variable",
-                     "almost no readable text", "hollow page", "skeleton page")
+                     "almost no readable text", "hollow page", "skeleton page",
+                     "no <style> block", "unstyled page", "flat palette",
+                     "no rounded corners", "no gradients or shadows",
+                     "no buttons/CTAs")
 
 
 def web_qa_should_repair(issues: list[str]) -> bool:
