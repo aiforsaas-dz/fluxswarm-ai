@@ -201,6 +201,42 @@ def test_web_intent_guidance_in_prompts():
     assert "single self-contained index.html" not in code
 
 
+def test_builder_prompt_injects_design_spec():
+    web = demo_llm.builder_prompt(
+        "Build", "a landing page for a startup", "plan",
+        design_spec="## Palette\n--bg: #0b1220; --accent: #f59e0b;\n## Tokens\n--radius: 14px;")
+    assert "DESIGN SPEC" in web
+    assert "--accent: #f59e0b" in web
+    assert "--radius: 14px" in web
+
+
+def test_designer_prompt_demands_concrete_system_for_web():
+    web = demo_llm.designer_prompt("ecc-designer", "a landing page for a bakery",
+                                   plan='{"sections": ["Menu", "About"]}')
+    assert "DESIGN.md" in web
+    assert "## Palette" in web
+    assert "## Tokens" in web
+    assert "## Type" in web
+    assert "system-ui" in web
+    assert "no external fonts/CDNs" in web
+    # Non-web goals degrade to a short consistency note, never a visual system.
+    cli = demo_llm.designer_prompt("ecc-designer", "build a CLI tool", plan="x")
+    assert "## Palette" not in cli
+    assert "SHORT note" in cli
+
+
+def test_auditor_prompt_restates_qawithout_inventing():
+    aud = demo_llm.auditor_prompt(
+        "ecc-auditor", "a landing page",
+        design="--accent: #f59e0b",
+        qa="web_deliverable_score=88; none")
+    assert "AUDIT.md" in aud
+    assert "web_deliverable_score=88" in aud
+    assert "Verbatim" in aud or "verbatim" in aud
+    no_qa = demo_llm.auditor_prompt("ecc-auditor", "a landing page", qa="")
+    assert "none recorded" in no_qa
+
+
 def test_builder_token_budget_scales_with_web_goals():
     assert demo_llm.builder_max_tokens("a landing page") > 400
     assert demo_llm.builder_max_tokens("build a dashboard UI") > 400

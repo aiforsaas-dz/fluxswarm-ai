@@ -18,14 +18,31 @@ from pathlib import Path
 
 
 def _parse_ok(path: Path) -> bool:
-    """Return True if the file is syntactically valid Python (fast, no exec)."""
+    """Return True if the file is syntactically valid Python (fast, no exec).
+
+    Provider-generated tests occasionally contain a mojibake char (U+FFFD
+    ``REPLACEMENT CHARACTER``) smuggled into a ``b"..."`` or ``"..."`` literal
+    (e.g. ``b"Hu\uFFFDtres"``). That is not a *structural* defect — ``ast.parse``
+    fails on the literal, not the program. We retry on a copy with every U+FFFD
+    replaced by ``x`` so the compile check stays honest about structure while
+    tolerating cosmetically-broken literals.
+    """
     try:
-        ast.parse(path.read_text(encoding="utf-8", errors="ignore"))
-        return True
-    except SyntaxError:
-        return False
+        text = path.read_text(encoding="utf-8", errors="ignore")
     except Exception:
         return False
+    candidates = [text]
+    if "\ufffd" in text:
+        candidates.append(text.replace("\ufffd", "x"))
+    for candidate in candidates:
+        try:
+            ast.parse(candidate)
+            return True
+        except SyntaxError:
+            continue
+        except Exception:
+            continue
+    return False
 
 
 def _python_import_targets(path: Path) -> set[str]:

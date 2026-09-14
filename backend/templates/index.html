@@ -4,9 +4,9 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
-<meta name="description" content="FluxSwarm — type a goal and a squad of 6 AI agents plans, builds, tests and reviews it on a live board. 1 credit per launch. BYOK optional." />
+<meta name="description" content="FluxSwarm — type a goal and a squad of 8 AI agents plans, builds, tests, designs and reviews it on a live board. 1 credit per launch. BYOK optional." />
 <meta property="og:title" content="FluxSwarm — AI development squad" />
-<meta property="og:description" content="Type a goal. A 6-agent squad builds it on a live board. 1 credit per launch. Bring your own provider key." />
+<meta property="og:description" content="Type a goal. An 8-agent squad builds it on a live board. 1 credit per launch. Bring your own provider key." />
 <meta property="og:type" content="website" />
 <meta property="og:image" content="{{ og_image }}" />
 <meta property="og:image:width" content="1200" />
@@ -196,7 +196,7 @@
 <nav role="navigation" aria-label="FluxSwarm">
   <img class="nav-logo" src="/static/brand/logo.jpg" alt="" width="26" height="26" />
   <h1>FluxSwarm</h1>
-  <span class="tag" data-i18n="header_tag">A squad of 6 AI agents builds your project on a live board</span>
+  <span class="tag" data-i18n="header_tag">A squad of 8 AI agents builds your project on a live board</span>
   <span class="spacer"></span>
   <a class="nav" href="/how-it-works" data-i18n="nav_how">How it works</a>
   <a class="nav" href="/faq" data-i18n="nav_faq">FAQ</a>
@@ -254,8 +254,9 @@
   <div class="card" id="about">
     <h2 class="section-title" data-i18n-html="about_title">What is <span class="grad">FluxSwarm</span>?</h2>
     <p class="hint" style="font-size:13.5px;line-height:1.7;margin:8px 0 0" data-i18n="about_body">
-      Type a goal and a squad of 6 specialized agents — Planner, Architect, DevOps, TDD,
-      Reviewer, Builder — plans, builds, tests, reviews and assembles it on a live task
+      Type a goal and a squad of 8 specialized agents — Planner, Architect, DevOps, TDD,
+      Reviewer, Designer, Builder, Auditor — plans, builds, tests, designs, reviews and
+      assembles it on a live task
       board you can watch. Generated files land in your project workspace, ready to use.
 Bring your own provider key for the strongest output — or a free OpenRouter key to trial free.
       Each launch is still a single credit.
@@ -307,7 +308,7 @@ Bring your own provider key for the strongest output — or a free OpenRouter ke
   <div class="card" id="pricing">
     <h2 class="section-title" data-i18n="pricing_title">Plans &amp; pricing</h2>
     <div class="grid" id="plansGrid"></div>
-    <div class="hint" data-i18n="pricing_hint">Prepaid credit packs — no monthly fee. All plans include the full squad (6 agents); higher tiers add credits and parallel execution. Prices in USD; GBP is applied by Paddle at checkout for UK customers.</div>
+    <div class="hint" data-i18n="pricing_hint">Prepaid credit packs — no monthly fee. All plans include the full squad (8 agents); higher tiers add credits and parallel execution. Prices in USD; GBP is applied by Paddle at checkout for UK customers.</div>
     <div style="margin-top:12px">
       <details class="faq" open><summary>How are credits used?</summary><p>One launch = one project board = one credit. You buy nothing monthly — packs never expire.</p></details>
       <details class="faq"><summary>Can I try before paying?</summary><p>Yes — the Demo plan includes 5 free credits, no card required. You can also bring your own provider key (BYOK) at any tier.</p></details>
@@ -372,7 +373,7 @@ Bring your own provider key for the strongest output — or a free OpenRouter ke
       <div style="flex:1"><label for="tpl_price" data-i18n="tpl_price">Price (credits)</label><input id="tpl_price" type="number" value="10" /></div>
     </div>
     <label for="tpl_desc" data-i18n="tpl_desc">Description</label><textarea id="tpl_desc" placeholder="What does this squad build?"></textarea>
-    <label for="tpl_agents" data-i18n="tpl_agents">Agents (display names, comma separated)</label><input id="tpl_agents" placeholder="Planner, Architect, DevOps, TDD, Reviewer, Builder" />
+    <label for="tpl_agents" data-i18n="tpl_agents">Agents (display names, comma separated)</label><input id="tpl_agents" placeholder="Planner, Architect, DevOps, TDD, Reviewer, Designer, Builder, Auditor" />
     <button class="primary" data-onclick="publishTpl">📦 Publish template</button>
     <h3 style="font-size:15px;margin-top:16px" data-i18n="market_list">Available templates</h3>
     <div class="grid" id="tplGrid"></div>
@@ -791,7 +792,7 @@ async function buyTpl(id){if(!token){openAuth();return;}
 const I18N = {
   en: {
     skip_link:"Skip to content",
-    header_tag:"A squad of 6 AI agents builds your project on a live board",
+    header_tag:"A squad of 8 AI agents builds your project on a live board",
     nav_how:"How it works", nav_faq:"FAQ", nav_projects:"History", nav_settings:"Account",
     nav_pricing:"Pricing", nav_ref:"Referrals", nav_byok:"My keys", nav_login:"Log in / Sign up", nav_market:"Marketplace",
     hero_title:"Launch a project with a <span class=\"grad\">full agent squad</span>", lbl_pname:"Project name", lbl_pgoal:"Build goal (the squad will execute it)",
@@ -799,7 +800,7 @@ const I18N = {
     hero_hint:"Each launch uses 1 credit. Sign in to launch — the Demo plan starts with 5 free credits (no card).",
     about_title:"What is <span class=\"grad\">FluxSwarm</span>?",
     about_body:
-      "Type a goal and a squad of 6 specialized agents — Planner, Architect, DevOps, TDD, Reviewer, Builder — plans, builds, tests, reviews and assembles it on a live task board you can watch. Generated files land in your project workspace, ready to use. Bring your own provider key for the strongest output — each launch is still a single credit. 1 credit per launch, credits never expire, no monthly fee.",
+      "Type a goal and a squad of 8 specialized agents — Planner, Architect, DevOps, TDD, Reviewer, Designer, Builder, Auditor — plans, builds, tests, designs, reviews and assembles it on a live task board you can watch. Generated files land in your project workspace, ready to use. Bring your own provider key for the strongest output — each launch is still a single credit. 1 credit per launch, credits never expire, no monthly fee.",
     squad_title:"The Squad", board_title:"Live task board",
     board_empty:"No swarm started yet. Create a project or try Demo.",
     res_hint:"Generated files from this board's workspace.",
@@ -818,7 +819,7 @@ const I18N = {
     export_fail:"Could not download data", export_ok:"Your data downloaded", del_confirm_prompt:"Type DELETE to permanently delete your account:",
     del_ok:"Account and all data deleted", del_fail:"Account deletion failed", del_cancel:"Cancelled — nothing was deleted",
     pricing_title:"Plans & pricing",
-    pricing_hint:"Prepaid credit packs — no monthly fee. All plans include the full squad (6 agents); higher tiers add credits and parallel execution. Prices in USD; GBP is applied by Paddle at checkout for UK customers.",
+    pricing_hint:"Prepaid credit packs — no monthly fee. All plans include the full squad (8 agents); higher tiers add credits and parallel execution. Prices in USD; GBP is applied by Paddle at checkout for UK customers.",
     ref_title:"Referral Program", ref_login_empty:"Sign in to see your referral link.",
     ref_your_link:"Your referral link:", ref_reward:"You earn {c} credits for each friend who makes a first paid purchase (they also get 10 bonus credits). Referral earnings are capped at 500 credits per account.",
     byok_title:"🔑 Your keys (BYOK)",
@@ -837,7 +838,7 @@ const I18N = {
     ag_delete:"Delete", ag_delete_fail:"Delete failed", ag_deleted:"Agent deleted", ag_delete_confirm:"Delete this custom agent? It will be removed from your account.",
     skills_lbl:"Skills:", per_pack:"one-time credit pack", credits_line:"{c} credits · parallel x{p}",
     desc_demo:"Free trial — no card required", desc_starter:"For freelancers & small projects", desc_pro:"For small teams", desc_scale:"For companies & agencies", desc_topup:"Quick refill — credits never expire",
-    feat_full:"Full squad (6 agents)", feat_credit:"1 credit per launch", feat_live:"Live board stream", feat_tg:"Telegram bot",
+    feat_full:"Full squad (8 agents)", feat_credit:"1 credit per launch", feat_live:"Live board stream", feat_tg:"Telegram bot",
     use_free:"Use free", subscribe_btn:"Pay with card", creds:"credits", logout:"Log out",
     loggedin_hint:"Signed in — credits left for launches. Launch your swarm.",
     login_fail:"Login failed", login_ok:"Signed in", reg_fail_prefix:"Registration failed: ", reg_ok:"Account created", logout_ok:"Signed out",

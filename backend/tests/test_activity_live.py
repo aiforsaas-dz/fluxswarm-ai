@@ -161,9 +161,10 @@ def test_result_preview_from_event_summary_and_stored_result(tmp_path, monkeypat
     assert hc_mod._attach_activity(slug, t3)["result_preview"] is None
 
 
-def test_role_description_exposed_for_all_six_agents():
+def test_role_description_exposed_for_all_eight_agents():
     assert {v["name"] for v in hc_mod.ROLE_INFO.values()} == {
-        "Planner", "Architect", "DevOps", "TDD", "Reviewer", "Builder"}
+        "Planner", "Architect", "DevOps", "TDD", "Reviewer",
+        "Designer", "Builder", "Auditor"}
     for role in hc_mod.ROLE_INFO.values():
         assert role["name"] and role["action"] and role["done"] and role["desc"]
 

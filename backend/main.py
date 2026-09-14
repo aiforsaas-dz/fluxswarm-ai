@@ -900,7 +900,7 @@ def _ws_brief(root, limit: int = 2500) -> str:
     root = Path(root)
     parts = []
     for name in ("PLAN.md", "ARCHITECTURE.md", "Dockerfile",
-                 "tests/test_app.py", "REVIEW.md"):
+                 "tests/test_app.py", "REVIEW.md", "DESIGN.md", "AUDIT.md"):
         p = root / name
         try:
             if p.exists():
@@ -918,6 +918,28 @@ def _doc(path, limit: int = 6000) -> str:
         return p.read_text(encoding="utf-8", errors="ignore")[:limit] if p.exists() else ""
     except Exception:
         return ""
+
+
+def _web_qa_summary(workspace, limit: int = 3000) -> str:
+    """Deterministic QA digest of the FINAL deliverable (best-effort, bounded).
+    Feeds the Auditor lane so its acceptance report mirrors the gate instead of
+    inventing verdicts."""
+    try:
+        html = (Path(workspace) / "index.html").read_text(
+            encoding="utf-8", errors="ignore")
+    except Exception:
+        html = ""
+    if not html.strip():
+        return "web page not built / not auditable"
+    try:
+        issues = demo_llm.web_qa_issues(html)
+        score = demo_llm.web_deliverable_score(html)
+        head = f"web_deliverable_score={score}/100; issues ({len(issues)}):"
+        if not issues:
+            return head + "\n  - none (page passes deterministic QA)"
+        return head + "\n  - " + "\n  - ".join(issues[:12])[:limit]
+    except Exception as exc:  # pragma: no cover - defensive
+        return f"QA runner failed: {type(exc).__name__}"
 
 
 def _insert_gate_event(slug: str, task_id: str, evidence: dict) -> None:
@@ -938,14 +960,16 @@ def _insert_gate_event(slug: str, task_id: str, evidence: dict) -> None:
 def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None = None,
                      custom_agents: list[dict] | None = None,
                      context_payload: dict | None = None) -> None:
-    """Drive the thin 6-lane project squad to completion in a daemon thread.
+    """Drive the thin 8-lane project squad to completion in a daemon thread.
 
-    Planner -> Architect -> DevOps -> TDD -> Reviewer -> Builder, each a REAL
-    provider completion (pool or BYOK) writing a REAL artifact into the project
-    workspace (served by /api/projects/{slug}/workspace). Bounded, direct-DB,
-    no fat CLI worker, no OOM. On failure the launched lanes stay honest on the
-    board and the launch is finalized (credit refunded only when no real work
-    was produced — the same policy as the fat path).
+    Planner -> Architect -> DevOps -> TDD -> Reviewer -> Designer -> Builder
+    -> Auditor: Planner..Reviewer are real provider completions writing real
+    artifacts; Designer writes a concrete DESIGN.md (palette/type/tokens) that
+    the Builder MUST follow; the Auditor (last) reviews the FINAL deliverable
+    against that design + deterministic QA. Bounded, direct-DB, no fat CLI
+    worker, no OOM. On failure the launched lanes stay honest on the board and
+    the launch is finalized (credit refunded only when no real work was
+    produced — the same policy as the fat path).
 
     ``custom_agents`` (P4): optional user-defined agents
     ``{"id", "name", "objective", "skills"}`` added as extra lanes
@@ -1008,8 +1032,19 @@ def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None =
              lambda brief: demo_llm.tdd_prompt(hc.SQUAD[3][2], goal, codebase_ctx=codebase_ctx)),
             ("ecc-reviewer", "REVIEW.md",
              lambda brief: demo_llm.reviewer_prompt(hc.VERIFIER[2], goal, brief, codebase_ctx=codebase_ctx)),
+            ("ecc-designer", "DESIGN.md",
+             lambda brief: demo_llm.designer_prompt(
+                 hc.DESIGNER[2], goal,
+                 plan=_doc(ws_root / "PLAN.md"),
+                 codebase_ctx=codebase_ctx)),
             ("ecc-build-fixer", None,
              lambda brief: demo_llm.builder_prompt(hc.SYNTHESIZER[2], goal, brief, codebase_ctx=codebase_ctx)),
+            ("ecc-auditor", "AUDIT.md",
+             lambda brief: demo_llm.auditor_prompt(
+                 hc.AUDITOR[2], goal,
+                 design=_doc(ws_root / "DESIGN.md"),
+                 qa=_web_qa_summary(ws_root),
+                 codebase_ctx=codebase_ctx)),
         ]
         brief = ""
         evidence = None
@@ -1051,7 +1086,18 @@ def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None =
                         fallback=_ws_brief(ws_root)),
                     task_title=hc.SYNTHESIZER[2],
                     api_key=api_key,
-                    codebase_ctx=codebase_ctx)
+                    codebase_ctx=codebase_ctx,
+                    design_spec=_doc(ws_root / "DESIGN.md"))
+                # Refresh the evidence report now that the real deliverable
+                # exists: the pre-build run (after Reviewer) still passes for
+                # plan/arch/devops/tdd/review, but the web_qa gate would mark
+                # index.html 'missing' if evaluated before the Builder wrote it.
+                # Re-running here lets web_qa audit the ACTUAL page and gives the
+                # Auditor (next lane) an accurate report to summarize.
+                try:
+                    evidence = evidence_gate.write_evidence_md(str(ws_root), goal)
+                except Exception:
+                    evidence = None
             else:
                 hc.thin_execute(board=slug, task_id=tid, workspace=str(ws_root),
                                 provider=provider, model=model,
@@ -1945,14 +1991,16 @@ def _append_missing_content(*, slug: str, task_id: str, workspace: str,
 def _run_builder(*, slug: str, task_id: str, workspace: str, provider, model,
                  objective: str, brief: str, task_title: str,
                  api_key: str | None = None, max_tokens: int | None = None,
-                 codebase_ctx: str = "") -> dict:
+                 codebase_ctx: str = "", design_spec: str = "") -> dict:
     """Build the final deliverable lane, with ONE automatic QA re-run.
 
     The builder's artifact is what /p/ renders live, so its output gets a
     larger token budget AND a light completeness gate: if a web deliverable
     (index.html) comes back truncated/hollow, the lane is re-run once with a
     repair hint instead of shipping a broken page. ``max_tokens`` lets the
-    demo path pass a lighter budget that fits its wall-clock cap."""
+    demo path pass a lighter budget that fits its wall-clock cap. ``design_spec``
+    (the Designer's DESIGN.md) is injected so the page is built TO a concrete
+    palette/type/token system instead of improvised colors."""
 
     def _execute(repair: bool = False, qa: list[str] | None = None) -> dict:
         return hc.thin_execute(
@@ -1960,6 +2008,7 @@ def _run_builder(*, slug: str, task_id: str, workspace: str, provider, model,
             provider=provider, model=model,
             prompt=demo_llm.builder_prompt(task_title, objective, brief,
                                            repair=repair, qa=qa,
+                                           design_spec=design_spec,
                                            codebase_ctx=codebase_ctx),
             objective=objective, api_key=api_key,
             artifact_name=demo_llm.deliverable_filename(objective),
@@ -2568,7 +2617,7 @@ def api_create_project(payload: ProjectCreate, request: Request,
         if hc.projects_are_thin():
             # Small-memory host: the fat `swarm` CLI + `boards create` load the
             # whole workspace and OOM a 512 MB container (measured crash loop).
-            # Build the real 6-lane squad directly in kanban.db; the background
+            # Build the real 8-lane squad directly in kanban.db; the background
             # thin driver then executes each lane with a real provider call.
             swarm = hc.launch_project_thin(slug, goal, provider=prov, model=model,
                                            custom_agents=custom_agents)
@@ -3704,11 +3753,12 @@ concrete first version built — with a live picture of the work and the generat
 files in your workspace — without wiring up an agent pipeline themselves.</p>
 <h2>1. Type a goal</h2><p>Describe the product in one paragraph. The squad plans
 the rest.</p>
-<h2>2. A 6-agent squad takes over</h2><p>Your goal is broken into work and
+<h2>2. An 8-agent squad takes over</h2><p>Your goal is broken into work and
 assigned to a real agent crew, watched live on a kanban board:
 <strong>Planner</strong> (breakdown) → <strong>Architect</strong> (structure) →
 <strong>DevOps</strong> (scaffold &amp; CI/CD) → <strong>TDD</strong> (tests) →
-<strong>Reviewer</strong> (verify) → <strong>Builder</strong> (merge to output).
+<strong>Reviewer</strong> (verify) → <strong>Designer</strong> (palette &amp; type) →
+<strong>Builder</strong> (merge to output) → <strong>Auditor</strong> (final check).
 The agents run inside the Hermes execution runtime using the open-source ECC
 skill profiles — you do not need to install or manage either.</p>
 <h2>3. Pick a model — bring a key or use the deployment default</h2><p>Bring your own
@@ -3728,7 +3778,7 @@ that drives the board, and ECC is an underlying open-source component (agent ski
 profiles) used inside it. Both are third-party components; FluxSwarm is not Hermes
 and does not own ECC. Their availability is required to run a launch, and their
 licences are their respective authors'.</p>"""
-    return _market_page("How it works — FluxSwarm", "A 6-agent AI development squad on a live board, 1 credit per launch", body, "/how-it-works")
+    return _market_page("How it works — FluxSwarm", "An 8-agent AI development squad on a live board, 1 credit per launch", body, "/how-it-works")
 
 
 @app.get("/faq", response_class=HTMLResponse)
@@ -3865,7 +3915,9 @@ _ADMT_AGENTS = (
     {"agent": "ecc-devops", "role": "deployment"},
     {"agent": "ecc-tdd", "role": "coding"},
     {"agent": "ecc-reviewer", "role": "review"},
+    {"agent": "ecc-designer", "role": "design"},
     {"agent": "ecc-build-fixer", "role": "deployment"},
+    {"agent": "ecc-auditor", "role": "review"},
 )
 
 

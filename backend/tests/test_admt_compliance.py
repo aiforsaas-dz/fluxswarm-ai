@@ -218,7 +218,7 @@ def test_logic_access(monkeypatch):
     assert "scalable" in body["goal"]
     assert body["agents_used"] == [
         "ecc-planner", "ecc-architect", "ecc-devops", "ecc-tdd",
-        "ecc-reviewer", "ecc-build-fixer",
+        "ecc-reviewer", "ecc-designer", "ecc-build-fixer", "ecc-auditor",
     ]
     assert body["provider"] == "anthropic"
     assert body["runtime_model"] == "claude-3-5-sonnet"

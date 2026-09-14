@@ -70,7 +70,7 @@ def test_telegram_intent():
 def test_how_it_works_intent():
     r = support_agent.answer("how does the squad work")
     assert r["source"] == "kb"
-    assert "6-agent" in r["text"]
+    assert "8-agent" in r["text"]
 
 
 def test_limits_intent():

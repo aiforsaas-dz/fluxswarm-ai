@@ -36,7 +36,8 @@ _HANDBOOK = """FluxSwarm product facts (use ONLY these facts, keep answers conci
 - Account deletion erases identifiable data immediately; only the append-only
   security audit log is retained.
 - Concurrent agents per launch: Demo 1, Starter 2, Pro 4, Scale 6.
-- The squad has 6 agents: Planner, Architect, DevOps, TDD, Reviewer, Builder.
+- The squad has 8 agents: Planner, Architect, DevOps, TDD, Reviewer, Designer,
+  Builder, Auditor.
 - Telegram bot exists; users link it under Account -> Link Telegram.
 - Support email: support@fluxswarm.ai; operator contact may differ at runtime.
 NEVER invent prices, features or claims not listed here."""
@@ -131,11 +132,11 @@ _ANSWER_MAP = {
         "actions": [{"label": "Link Telegram", "type": "goto", "value": "settings"}],
     },
     "how": {
-        "text": ("FluxSwarm launches a 6-agent AI squad (Planner, Architect, DevOps, "
-                 "TDD, Reviewer, Builder) on a live board. Describe your project and the "
-                 "squad plans, implements and tests it; a Reviewer checks the work and a "
-                 "Synthesizer finalises it. You can watch the activity and read the "
-                 "workspace as it progresses."),
+        "text": ("FluxSwarm launches an 8-agent AI squad (Planner, Architect, DevOps, "
+                 "TDD, Reviewer, Designer, Builder, Auditor) on a live board. Describe "
+                 "your project and the squad plans, implements and tests it; a Reviewer "
+                 "checks the work and a Synthesizer finalises it. You can watch the "
+                 "activity and read the workspace as it progresses."),
         "actions": [{"label": "How it works", "type": "link", "value": "/how-it-works"}],
     },
     "security": {

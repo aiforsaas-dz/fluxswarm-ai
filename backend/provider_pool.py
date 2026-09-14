@@ -86,7 +86,7 @@ def _entry_keyed(entry: dict) -> bool:
 
 # The free demo's only latency-friendly slot. gemini-1.5-flash converts a
 # squad lane in seconds; the nemotron free slot is a slow fallback that (alone)
-# makes a full 6-lane swarm outpace the demo runtime cap on a throttled
+# makes a full 8-lane swarm outpace the demo runtime cap on a throttled
 # instance. Prefer the fast slot whenever its key is configured and healthy.
 _FAST_DEMO_PROVIDER = "google"
 _FAST_DEMO_MODEL_PREFIX = "gemini-"

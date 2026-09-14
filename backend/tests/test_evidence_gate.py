@@ -44,6 +44,33 @@ def test_warn_when_test_artifact_syntax_error(tmp_path):
     assert compiles["status"] == "warn"
 
 
+def test_mojibake_literal_passes_syntax_check(tmp_path):
+    """A provider-generated test smuggling a mojibake char (U+FFFD) inside a
+    bytes literal (e.g. ``b"Hu\uFFFDtres"``) is a COSMETIC defect — ast.parse
+    rejects the literal, not the program. The gate must NOT downgrade the
+    verdict for a structurally-fine file (observed live on project 36)."""
+    root = _ws(tmp_path, {
+        "PLAN.md": "# Plan", "ARCHITECTURE.md": "# Arch", "REVIEW.md": "# Rev",
+        "tests/test_app.py": 'def test_menu():\n    name = b"Hu\ufffdtres"\n    assert len(name)\n',
+    })
+    ev = eg.collect_evidence(str(root), goal="build a restaurant website")
+    compiles = next(c for c in ev["checks"] if c["name"] == "test_artifact_compiles")
+    assert compiles["status"] == "pass"
+    # Goal is web -> missing index.html still warns; the mojibake test file
+    # must NEVER be the reason: compile status above is what the fix protects.
+    assert ev["verdict"] != "NO-GO"
+
+
+def test_mojibake_in_str_literal_tolerated(tmp_path):
+    root = _ws(tmp_path, {
+        "PLAN.md": "# P", "ARCHITECTURE.md": "# A", "REVIEW.md": "# R",
+        "tests/test_app.py": 'def t():\n    assert "caf\ufffd" != ""\n',
+    })
+    ev = eg.collect_evidence(str(root))
+    compiles = next(c for c in ev["checks"] if c["name"] == "test_artifact_compiles")
+    assert compiles["status"] == "pass"
+
+
 def test_web_qa_warning_surfaces(tmp_path):
     root = _ws(tmp_path, {
         "PLAN.md": "# Plan", "tests/test_app.py": "def t():\n    pass\n",

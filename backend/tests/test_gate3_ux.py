@@ -179,9 +179,10 @@ def test_faq_believes_product_claims():
 def test_how_it_works_honest_about_scope():
     r = client.get("/how-it-works")
     assert r.status_code == 200
-    for agent in ("Planner", "Architect", "DevOps", "TDD", "Reviewer", "Builder"):
+    for agent in ("Planner", "Architect", "DevOps", "TDD", "Reviewer",
+                  "Designer", "Builder", "Auditor"):
         assert agent in r.text
-    assert "6-agent squad" in r.text
+    assert "8-agent squad" in r.text
     assert "browsable in the UI" in r.text          # workspace reader exists now
     assert "Hermes" in r.text and "ECC" in r.text
     assert "is not Hermes" in r.text and "does not own ECC" in r.text

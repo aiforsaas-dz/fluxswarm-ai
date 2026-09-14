@@ -3,7 +3,7 @@
 The fat Hermes worker / ``swarm`` CLI loads the whole workspace and OOMs a
 512 MB container ~40-80s into work (measured crash loop on the free host), so
 on small-memory hosts EVERY real launch runs the thin in-process direct-DB
-driver: real board, real 6-lane squad, real provider completion per lane, real
+driver: real board, real 8-lane squad, real provider completion per lane, real
 artifacts in the served workspace — no fat CLI subprocess anywhere. These tests
 lock that path's honesty boundaries and its automatic memory-gate.
 """
@@ -68,15 +68,15 @@ def test_list_boards_fs_scan_on_thin(monkeypatch, tmp_path):
     assert slugs == ["flux-demo-y", "u1-x"]
 
 
-def test_launch_project_thin_builds_six_lanes_no_cli(monkeypatch, tmp_path):
-    """The thin project build writes the REAL 6-agent squad directly into
+def test_launch_project_thin_builds_eight_lanes_no_cli(monkeypatch, tmp_path):
+    """The thin project build writes the REAL 8-agent squad directly into
     kanban.db + seeds the served workspace, with zero CLI subprocesses."""
     _host(monkeypatch, tmp_path)
     monkeypatch.setattr(hc, "_run", lambda *a, **k: (_ for _ in ()).throw(
         AssertionError("CLI must not run for a thin project build")))
 
     swarm = hc.launch_project_thin("u1-proj", "Build a CLI tool", provider="gemini")
-    assert len(swarm["worker_ids"]) == 4
+    assert len(swarm["worker_ids"]) == 8
     assert swarm["planner_id"] == swarm["worker_ids"][0]
     assert swarm["verifier_id"] and swarm["synthesizer_id"]
 
@@ -93,10 +93,11 @@ def test_launch_project_thin_builds_six_lanes_no_cli(monkeypatch, tmp_path):
         c.close()
     assert [r[0] for r in rows] == [
         "ecc-planner", "ecc-architect", "ecc-devops",
-        "ecc-tdd", "ecc-reviewer", "ecc-build-fixer"]
+        "ecc-tdd", "ecc-reviewer", "ecc-designer",
+        "ecc-build-fixer", "ecc-auditor"]
     assert rows[0][1] == "ready"
     assert all(r[1] == "todo" for r in rows[1:])
-    assert created == 6
+    assert created == 8
 
 
 def test_list_tasks_renders_thin_squad(monkeypatch, tmp_path):
@@ -104,7 +105,8 @@ def test_list_tasks_renders_thin_squad(monkeypatch, tmp_path):
     hc.launch_project_thin("u1-r", "Ship a landing page")
     tasks = hc.list_tasks("u1-r")
     roles = [t.get("role_name") for t in tasks]
-    assert roles == ["Planner", "Architect", "DevOps", "TDD", "Reviewer", "Builder"]
+    assert roles == ["Planner", "Architect", "DevOps", "TDD", "Reviewer",
+                     "Designer", "Builder", "Auditor"]
     assert all(t.get("state") == "queued" for t in tasks)
 
 
@@ -149,10 +151,10 @@ def test_thin_runtime_byok_then_pool(monkeypatch):
         pass
 
 
-def test_bg_thin_project_drives_all_six_lanes_in_order(monkeypatch, tmp_path):
+def test_bg_thin_project_drives_all_eight_lanes_in_order(monkeypatch, tmp_path):
     """The thin driver executes Planner -> Architect -> DevOps -> TDD ->
-    Reviewer -> Builder IN ORDER, passing the pooled runtime + the real
-    artifact name, then finalizes the launch as ok."""
+    Reviewer -> Designer -> Builder -> Auditor IN ORDER, passing the pooled
+    runtime + the real artifact name, then finalizes the launch as ok."""
     _host(monkeypatch, tmp_path)
     hc.launch_project_thin("u1-drive", "Build a REST API")
     by_role = {t["assignee"]: t["id"] for t in hc.list_tasks("u1-drive")}
@@ -178,11 +180,13 @@ def test_bg_thin_project_drives_all_six_lanes_in_order(monkeypatch, tmp_path):
     main_mod._bg_thin_project("u1-drive", "Build a REST API", pid=7)
 
     expect_order = ["ecc-planner", "ecc-architect", "ecc-devops",
-                    "ecc-tdd", "ecc-reviewer", "ecc-build-fixer"]
+                    "ecc-tdd", "ecc-reviewer", "ecc-designer",
+                    "ecc-build-fixer", "ecc-auditor"]
     assert [r["task_id"] for r in ran] == [by_role[a] for a in expect_order]
     assert [r["artifact_name"] for r in ran] == [
         "PLAN.md", "ARCHITECTURE.md", "Dockerfile",
-        "tests/test_app.py", "REVIEW.md", "deliverable.md"]
+        "tests/test_app.py", "REVIEW.md", "DESIGN.md",
+        "deliverable.md", "AUDIT.md"]
     assert all(r["board"] == "u1-drive" for r in ran)
     assert all(r["provider"] == "gemini" for r in ran)
     assert all(r["api_key"] is None for r in ran)
@@ -246,10 +250,29 @@ def test_bg_thin_project_skips_already_done_lanes(monkeypatch, tmp_path):
 
     main_mod._bg_thin_project("u1-resume", "Build a REST API", pid=9)
 
-    # Only the 4 unfinished lanes re-run; Planner/Architect stay untouched.
+    # Only the 6 unfinished lanes re-run; Planner/Architect stay untouched.
     assert sorted(ran) == sorted(by_role[a] for a in
-                                  ["ecc-devops", "ecc-tdd", "ecc-reviewer", "ecc-build-fixer"])
+                                  ["ecc-devops", "ecc-tdd", "ecc-reviewer",
+                                   "ecc-designer", "ecc-build-fixer", "ecc-auditor"])
     assert finalized.get("status") == "ok"
+
+
+def test_web_qa_summary_feeds_auditor(tmp_path):
+    """The Auditor lane gets a deterministic QA digest of the FINAL page (not
+    the pre-build one), mirroring the evidence gate instead of inventing a
+    verdict. A missing/truncated page must be reported honestly."""
+    root = tmp_path / "wsA"
+    root.mkdir()
+    good = ("<!doctype html><html><head><style>"
+            + "html{background:#0b1220;color:#f5f5f5} h1{color:#fff}</style>"
+            + "</head><body><h1>T</h1><footer>F</footer></body></html>")
+    (root / "index.html").write_text(good, encoding="utf-8")
+    s = main_mod._web_qa_summary(str(root))
+    assert "web_deliverable_score" in s
+
+    empty = tmp_path / "wsB"
+    empty.mkdir()
+    assert "not built" in main_mod._web_qa_summary(str(empty))
 
 
 def test_swarm_payload_maps_dict_and_result_object():
@@ -353,5 +376,8 @@ def test_thin_driver_pass_goal_artifact_for_readme_goal(monkeypatch, tmp_path):
     monkeypatch.setattr(main_mod.db, "update_provider_usage_outcome", lambda *a, **k: None)
 
     main_mod._bg_thin_project("u1-r2", "Write a good README")
-    assert ran[-1]["artifact_name"] == "README.md"
-    assert ran[-1]["task_id"] == last_assignee_ids[0]
+    # Builder lane delivers README.md (Auditor runs after it and is NOT the
+    # deliverable-producing lane).
+    builder_runs = [r for r in ran if r["task_id"] == last_assignee_ids[0]]
+    assert builder_runs and builder_runs[-1]["artifact_name"] == "README.md"
+    assert ran[-1]["artifact_name"] == "AUDIT.md"   # Auditor is the last lane

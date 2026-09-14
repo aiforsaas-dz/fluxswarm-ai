@@ -113,6 +113,10 @@ SQUAD = [
 ]
 VERIFIER = ("ecc-reviewer", "Reviewer", "Review code quality", "agent-self-evaluation,verification-loop")
 SYNTHESIZER = ("ecc-build-fixer", "Builder", "Assemble and make the build green", "orch-build-mvp")
+# Extended squad members (P4 display-only lanes on the thin board — cheap
+# bounded completions, no extra ECC profile is provisioned).
+DESIGNER = ("ecc-designer", "Designer", "Define the visual design system", "design-system,ui-ux")
+AUDITOR = ("ecc-auditor", "Auditor", "Audit the delivered artifact", "agent-self-evaluation,verification-loop")
 
 # Map a marketplace template's DISPLAY names -> (internal profile, skills, role).
 # Lets a bought squad launch with the real agents behind the friendly names.
@@ -123,6 +127,8 @@ AGENT_REGISTRY = {
     "TDD":       ("ecc-tdd",       "tdd-workflow", "worker"),
     "Reviewer":  ("ecc-reviewer",  "agent-self-evaluation,verification-loop", "verifier"),
     "Builder":   ("ecc-build-fixer", "orch-build-mvp", "synthesizer"),
+    "Designer":  ("ecc-designer", "design-system,ui-ux", "worker"),
+    "Auditor":   ("ecc-auditor", "agent-self-evaluation,verification-loop", "worker"),
 }
 
 # Map our BYOK provider names -> the env var each Hermes agent profile expects.
@@ -653,7 +659,7 @@ def launch_from_template(board: str, goal: str, agents: list[str],
 
 # --------------------------------------------------------------------------
 # Demo profile: a lightweight, convergent 2-lane board for the free demo.
-# The full `hermes kanban swarm` squad (6 agents over the whole project
+# The full `hermes kanban swarm` squad (8 agents over the whole project
 # workspace) cannot converge within the free-tier runtime budget on a
 # throttled 0.1-CPU instance: each worker boots a fat CLI against a large
 # context, and slow/heavy workers get reclaimed or crash (memory), so the
@@ -807,17 +813,19 @@ def _seed_project_workspace(ws: Path, goal: str) -> None:
         "FluxSwarm project deliverable — thin squad workspace.\n\n"
         "OBJECTIVE:\n"
         f"{goal}\n\n"
-        "The six lanes below each produce a REAL artifact in this directory:\n"
+        "The eight lanes below each produce a REAL artifact in this directory:\n"
         "PLAN.md, ARCHITECTURE.md, Dockerfile, tests/test_app.py, REVIEW.md,\n"
-        "and the final deliverable (README.md, the project code file, or a single\n"
-        "self-contained index.html when the objective is a website/web app/landing page).\n"
+        "DESIGN.md, AUDIT.md, and the final deliverable (README.md, the project\n"
+        "code file, or a single self-contained index.html when the objective is a\n"
+        "website/web app/landing page).\n"
         "Confirm the deliverable actually satisfies the objective.\n",
         encoding="utf-8")
 
 
-# Thin 6-lane project graph: (profile, UI role, task title, status).
-# Mirrors the fat squad (SQUAD + VERIFIER + SYNTHESIZER) so the board renders
-# the SAME 6-agent swarm the paid path shows.
+# Thin 8-lane project graph: (profile, UI role, task title, status).
+# Mirrors the fat squad (SQUAD + VERIFIER + SYNTHESIZER) + the two extended
+# members (Designer, Auditor) so the board renders the SAME 8-agent swarm the
+# paid path shows.
 def _thin_project_lanes() -> list[tuple[str, str, str, str]]:
     return [
         (SQUAD[0][0], "Planner",    SQUAD[0][2], "ready"),
@@ -825,14 +833,16 @@ def _thin_project_lanes() -> list[tuple[str, str, str, str]]:
         (SQUAD[2][0], "DevOps",     SQUAD[2][2], "todo"),
         (SQUAD[3][0], "TDD",        SQUAD[3][2], "todo"),
         (VERIFIER[0], "Reviewer",   VERIFIER[2], "todo"),
+        (DESIGNER[0], "Designer",   DESIGNER[2], "todo"),
         (SYNTHESIZER[0], "Builder", SYNTHESIZER[2], "todo"),
+        (AUDITOR[0], "Auditor",     AUDITOR[2], "todo"),
     ]
 
 
 def launch_project_thin(board: str, goal: str, provider: Optional[str] = None,
                         model: Optional[str] = None,
                         custom_agents: Optional[list[dict]] = None) -> dict:
-    """Build the 6-lane project squad directly in kanban.db (no CLI).
+    """Build the 8-lane project squad directly in kanban.db (no CLI).
 
     Same honesty contract as ``launch_swarm`` but for small-memory hosts: the
     full ``hermes swarm`` CLI subprocess loads the entire workspace and OOMs a
@@ -885,7 +895,7 @@ def launch_project_thin(board: str, goal: str, provider: Optional[str] = None,
     board_store.snapshot_board(board, kind="project")
     return {
         "root_id": None,
-        "worker_ids": [ids[i] for i in range(len(SQUAD))],
+        "worker_ids": [ids[i] for i in range(len(lanes))],
         "verifier_id": verifier_id,
         "synthesizer_id": synth_id,
         "planner_id": plan_id,
@@ -1863,9 +1873,15 @@ ROLE_INFO = {
     "ecc-reviewer":    {"name": "Reviewer", "action": "Reviewing outputs and gating the swarm",
                         "done": "Review passed",
                         "desc": "Reviews every worker handoff and gates the swarm, completing only when the evidence is sufficient."},
+    "ecc-designer":    {"name": "Designer", "action": "Defining the visual design system",
+                        "done": "Design system defined",
+                        "desc": "Visual design specialist: produces the concrete palette, type scale and token set the Builder must follow."},
     "ecc-build-fixer": {"name": "Builder",  "action": "Assembling the final build",
                         "done": "Build assembled",
                         "desc": "Synthesizes the verified worker outputs into the final deliverable and makes the build green."},
+    "ecc-auditor":     {"name": "Auditor",  "action": "Auditing the delivered artifact",
+                        "done": "Audit completed",
+                        "desc": "Runs the final acceptance check over the delivered artifact against the design system and deterministic QA."},
 }
 
 _BOARD_DB_CACHE: dict = {}

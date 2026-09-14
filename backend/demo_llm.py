@@ -319,6 +319,7 @@ def plan_to_brief(plan_text: str, fallback: str = "") -> str:
 
 def builder_prompt(task_title: str, objective: str, plan: str,
                    repair: bool = False, qa: list[str] | None = None,
+                   design_spec: str = "",
                    codebase_ctx: str = "") -> str:
     if _is_web_objective(objective):
         deliverable = (
@@ -348,6 +349,8 @@ def builder_prompt(task_title: str, objective: str, plan: str,
         f"Task: {task_title}\n\n"
         f"Objective: {objective}\n\n"
         f"Plan (from the Planner):\n{plan or '(none)'}\n\n"
+        f"DESIGN SPEC (from the Designer — implement EXACTLY this palette, "
+        f"type scale and token set; do not improvise):\n{design_spec or '(none)'}\n\n"
         "Act as the Builder. "
         f"{deliverable} "
         "Output ONLY the file content — no commentary, no markdown fences, no "
@@ -804,6 +807,77 @@ def reviewer_prompt(task_title: str, objective: str, brief: str = "",
         "text) listing the strengths and any gaps or risks in the artifacts "
         "relative to the objective. This becomes REVIEW.md."
         f"{_codebase_block(codebase_ctx)}\n"
+    )
+
+
+def designer_prompt(task_title: str, objective: str, plan: str = "",
+                    codebase_ctx: str = "") -> str:
+    """Prompt for the Designer lane (P4 extended member): produces DESIGN.md —
+    a concrete, brand-specific visual system for the page so the Builder does
+    NOT improvise colors/typography: exact palette hexes, type scale,
+    spacing/radius/shadow tokens, section styling. Non-web goals degrade to a
+    short consistency note (the Designer adds no value to a CLI tool)."""
+    web = _is_web_objective(objective)
+    design_scope = (
+        "TARGET: output a CONCRETE VISUAL DESIGN SYSTEM (DESIGN.md) for the page "
+        "described by the plan, perfect for a professional landing page. Output "
+        "ONLY a compact markdown document with EXACTLY these sections:\n"
+        "- ## Palette — 5-6 hex colors with roles: --bg, --surface, --text, "
+        "--muted, --accent, --accent-2; state any gradients/shadow color wash.\n"
+        "- ## Type — system-ui stack, 3 sizes (display/heading/body) with "
+        "explicit px/clamp values and weights line-by-line.\n"
+        "- ## Tokens — --radius (cards/buttons), --shadow, --spacing scale "
+        "(4/8/16/24/48/96), --max-width ~1140px, section padding 96-120px "
+        "desktop / 56-64px mobile.\n"
+        "- ## Components — buttons (primary solid + secondary outline, hover/"
+        "focus), card, form fields, nav, footer: exact visual treatment each.\n"
+        "- ## Trim — 2-3 concrete micro-touches (hairline borders, soft shadows, "
+        "hero gradient, stat badges, accent underlines) that lift the page to "
+        "Lovable/Stripe-tier polish.\n"
+        "Every hint must be implementable by ONE inline <style> block in a "
+        "single self-contained index.html with no external fonts/CDNs."
+    ) if web else (
+        "The deliverable is a code/document artifact, not a page. Output DESIGN.md "
+        "as a SHORT note (up to 8 lines) confirming the design constraints for "
+        "the artifact: consistent naming conventions, code style and module "
+        "boundaries — nothing more."
+    )
+    return (
+        f"Task: {task_title}\n\n"
+        f"Objective: {objective}\n\n"
+        f"Plan (from the Planner):\n{(plan or '(none)')[:2000]}\n\n"
+        "Act as the Designer. " + design_scope +
+        " No markdown fences, no commentary outside the document, no file "
+        "writes — output the DESIGN.md content directly."
+        f"{_codebase_block(codebase_ctx)}\n"
+    )
+
+
+def auditor_prompt(task_title: str, objective: str, design: str = "",
+                   qa: str = "", codebase_ctx: str = "") -> str:
+    """Prompt for the Auditor lane (P4 extended member): produces AUDIT.md —
+    a human-readable acceptance report on the FINAL deliverable. ``qa`` carries
+    the deterministic post-build audit (web_qa_issues list). Never claims
+    closer-than-deterministic facts; the Auditor's verdict mirrors the gate."""
+    qa_block = f"\nDeterministic QA findings on the deliverable:\n{(qa or 'none')}\n" \
+        if qa.strip() else "\nDeterministic QA findings: none recorded.\n"
+    design_block = (f"\nDesign system it should match:\n{(design or '(none)')[:1500]}\n"
+                    if design.strip() else "")
+    return (
+        f"Task: {task_title}\n\n"
+        f"Objective: {objective}\n\n"
+        "Act as the Auditor. Produce AUDIT.md, a SHORT acceptance report for the "
+        "final deliverable just produced (at most 18 lines):\n"
+        "- Verdict: one of PASS / MINOR ISSUES / FAIL.\n"
+        "- Requirements coverage: confirm each major section/feature from the "
+        "objective is present, naming them concretely.\n"
+        "- Design compliance: compare the page against the DESIGN.md system.\n"
+        "- QA findings: restate the deterministic QA findings verbatim; do NOT "
+        "invent new ones, do NOT claim the page 'works' beyond what the QA "
+        "shows.\n"
+        "- Human review notes: 2-3 concrete things a human should eyeball.\n"
+        "Markdown only, no fences, no commentary outside the document."
+        f"{design_block}{qa_block}{_codebase_block(codebase_ctx)}\n"
     )
 
 

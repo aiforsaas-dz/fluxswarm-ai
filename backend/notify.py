@@ -31,7 +31,7 @@ def _html_welcome(name: str) -> str:
     return (
         "<p>Hi" + (f" {_esc(name)}" if name else "") + ",</p>"
         "<p>Welcome to FluxSwarm — your AI development squad.</p>"
-        "<p>Type a goal and a 6-agent crew plans, builds, tests, reviews and "
+        "<p>Type a goal and an 8-agent crew plans, builds, tests, reviews and "
         "assembles it on a live board. Your account includes a free Demo plan "
         "with 5 credits (1 credit per launch, credits never expire).</p>"
         "<p>Bring your own AI provider key any time for stronger output.</p>"
