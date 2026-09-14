@@ -497,6 +497,25 @@ _SLEEP = "import time; time.sleep(60)"
 _SLEEP_SRC = "-c"
 
 
+def _process_alive_posix(pid: int) -> bool:
+    """True if *pid* exists in /proc and is not a zombie.
+
+    A zombie responds happily to os.kill(pid, 0), so a plain signal 0 probe
+    would report a reaped-but-not-waited child as alive. Use /proc state.
+    """
+    try:
+        stat = Path(f"/proc/{int(pid)}/stat").read_text()
+    except (FileNotFoundError, ProcessLookupError, PermissionError, OSError):
+        return False
+    try:
+        # clk_btk is the first field after the comm (which can contain spaces).
+        rparen = stat.rfind(")")
+        state = stat[rparen + 2:].split()[0] if rparen >= 0 else ""
+        return state not in ("Z", "X")
+    except (ValueError, IndexError):
+        return True
+
+
 def _wait_gone(pid: float | int, timeout_s: float = 8.0) -> bool:
     """Cross-platform: is *pid* fully gone within *timeout_s*?"""
     if sys.platform == "win32":
@@ -507,9 +526,7 @@ def _wait_gone(pid: float | int, timeout_s: float = 8.0) -> bool:
         return str(int(pid)) not in proc.stdout
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
-        try:
-            os.kill(int(pid), 0)
-        except ProcessLookupError:
+        if not _process_alive_posix(int(pid)):
             return True
         time.sleep(0.1)
     return False
@@ -652,6 +669,7 @@ class TestPosixServerLock:
             [sys.executable, "-c", code],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             env=env,
+            cwd=str(Path(__file__).resolve().parent.parent),
         )
 
     def test_second_instance_is_refused(self, lockfile):

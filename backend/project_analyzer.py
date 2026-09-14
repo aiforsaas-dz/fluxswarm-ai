@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import zipfile
 from collections import Counter
 from pathlib import PurePosixPath
@@ -60,6 +61,10 @@ class ProjectAnalyzerError(ValueError):
 def _is_unsafe(name: str) -> bool:
     parts = PurePosixPath(name).parts
     if not parts or not parts[0]:
+        return True
+    # Drive-letter absolute (``C:\...`` / ``C:/...``) is absolute on every OS,
+    # not just ntpath; posixpath.isabs would let it through on Linux.
+    if re.match(r"^[A-Za-z]:", name):
         return True
     if name.startswith("/") or os.path.isabs(name) or "\\" in name:
         return True
