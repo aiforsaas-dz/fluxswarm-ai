@@ -26,8 +26,10 @@ jobs:
       # production secrets; production-mode failure paths are unit-tested.
       FLUXSWARM_DEMO_MODE: "1"
       # Phase 1: run the SQLite->PostgreSQL parity + Alembic migration suite
-      # against the ephemeral service container.
-      FLUXSWARM_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/fluxswarm_test
+      # against the ephemeral service container. Port 5432 is published to the
+      # host (``-p 5432:5432``), so DNS runs on the VM must use localhost — the
+      # ``postgres`` service label only resolves inside docker's own network.
+      FLUXSWARM_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fluxswarm_test
       # Phase 3: pin the hermetic file-KMS backend so the suite never touches a
       # real keyring.
       FLUXSWARM_KMS_BACKEND: file
