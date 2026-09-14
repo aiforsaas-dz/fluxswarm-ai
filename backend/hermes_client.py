@@ -2047,7 +2047,7 @@ def read_workspace(board: str) -> str:
     out = []
     try:
         for f in ws_root.rglob("*"):
-            if f.is_file() and (f.suffix in (".py", ".md", ".txt", ".json", ".yaml", ".yml")
+            if f.is_file() and (f.suffix in (".py", ".md", ".txt", ".json", ".yaml", ".yml", ".html")
                                 or f.name in _EXTRA_NAME):
                 out.append(f"--- {f.relative_to(ws_root)} ---\n")
                 out.append(f.read_text(encoding="utf-8", errors="ignore")[:3000])

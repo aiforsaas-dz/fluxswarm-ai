@@ -458,21 +458,25 @@ def _csp_for(nonce: str) -> str:
 
 
 # CSP for /p/ preview responses: user-generated content in a sandboxed iframe.
-# Allows inline/eval scripts so generated apps run. NOTE: this policy must NOT
-# carry a frame-ancestors directive — the preview iframe is sandboxed WITHOUT
-# allow-same-origin, so the frame gets an opaque origin that can never match
-# 'self' (or even '*') in Chromium, and the preview would be refused. Framing is
-# governed instead by the dashboard's frame-src 'self' (LOAD side) plus
-# X-Frame-Options: SAMEORIGIN on these responses (EMBED side, compares URL
-# origins and works under the sandbox). The global strict CSP stays for all
-# other routes.
+# Allows inline/eval scripts so generated apps run. The frame is sandboxed
+# WITHOUT allow-same-origin, so its document gets an opaque origin — therefore
+# header-based X-Frame-Options is useless here: Firefox evaluates SAMEORIGIN
+# against the sandboxed frame's unique origin and refuses the connection (the
+# "{ "html": browser-refusal }" symptom). Embedding is governed instead by:
+#   * dashboard/load side  -> the app CSP frame-src 'self' (only same-origin
+#     pages may be framed),
+#   * /p/ embed side        -> CSP frame-ancestors 'self' (ancestor is the
+#     dashboard, same origin => matches; this is ancestor-origin-based, so it
+#     works under the opaque sandbox), and NO X-Frame-Options header at all.
+# The global strict CSP (frame-ancestors 'none' + DENY) stays for all other
+# routes.
 _PREVIEW_CSP = (
     "default-src 'self' 'unsafe-inline' data: blob:; "
     "script-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; "
     "style-src 'self' 'unsafe-inline' data: blob:; "
     "img-src 'self' data: blob:; font-src 'self' data: blob:; "
     "connect-src 'self' data: blob: ws: wss:; "
-    "object-src 'none'; base-uri 'self'"
+    "object-src 'none'; base-uri 'self'; frame-ancestors 'self'"
 )
 
 
@@ -487,11 +491,18 @@ async def security_headers(request: Request, call_next):
         # Preview responses carry user-generated app pages that need inline
         # scripts/eval to render; they are served into a sandboxed (opaque
         # origin) iframe. Embedding is allowed by the dashboard's frame-src
-        # 'self' plus X-Frame-Options: SAMEORIGIN here; the relaxed CSP carries
-        # no frame-ancestors (opaque frames can never match a directive in
-        # Chromium). Everything else keeps the strict nonce-only policy below.
+        # 'self' (load side) plus CSP frame-ancestors 'self' here (embed side;
+        # the ancestor is the same-origin dashboard, so the directive matches
+        # even though the framed document itself has an opaque origin). No
+        # X-Frame-Options header is sent: Firefox refuses SAMEORIGIN for a
+        # sandboxed frame (unique origin) which shows up as a browser
+        # "connection not authorized" page inside the preview. Everything else
+        # keeps the strict nonce-only policy below.
         resp.headers["Content-Security-Policy"] = _PREVIEW_CSP
-        resp.headers["X-Frame-Options"] = "SAMEORIGIN"
+        try:
+            del resp.headers["x-frame-options"]
+        except (KeyError, ValueError):
+            pass
     else:
         resp.headers["Content-Security-Policy"] = _csp_for(nonce)
         resp.headers["X-Frame-Options"] = "DENY"

@@ -62,13 +62,16 @@ def test_demo_index_is_public_and_embeddable(_host):
     assert r.status_code == 200, r.text
     assert "<h1>Hi</h1>" in r.text
     assert "text/html" in r.headers["content-type"]
-    # embeddable by the dashboard iframe: relaxed CSP for generated apps, with
-    # NO frame-ancestors directive (an opaque sandboxed frame can never match
-    # one in Chromium) and SAMEORIGIN protecting the embed side
-    assert r.headers["x-frame-options"] == "SAMEORIGIN"
+    # embeddable by the dashboard iframe: relaxed CSP for generated apps.
+    # The preview frame is sandboxed WITHOUT allow-same-origin, so the framed
+    # document gets an opaque origin: Firefox refuses a X-Frame-Options
+    # SAMEORIGIN check against that unique origin (shows up as a browser
+    # "connection not authorized" page), so the embed side is governed by CSP
+    # frame-ancestors 'self' instead and NO X-Frame-Options header is sent.
+    assert "x-frame-options" not in r.headers
     csp = r.headers["content-security-policy"]
     assert "unsafe-inline" in csp
-    assert "frame-ancestors" not in csp
+    assert "frame-ancestors 'self'" in csp
 
 
 def test_preview_no_slash_redirects(_host):
@@ -188,7 +191,8 @@ def test_flag_set_only_on_preview_routes(_host):
     slug = "flux-demo-flag"
     _ws(_host, slug, "index.html").write_text("<h1>f</h1>", encoding="utf-8")
     r = client.get(f"/p/{slug}/")
-    assert r.headers["x-frame-options"] == "SAMEORIGIN"
+    # preview responses never send X-Frame-Options (see test_demo_index_…)
+    assert "x-frame-options" not in r.headers
     # the ticket endpoint itself is a regular API response (strict headers)
     user = _register("preview-ticket-hdr@fluxswarm.test")
     slug2 = f"u{user['user']['id']}-hdr"
