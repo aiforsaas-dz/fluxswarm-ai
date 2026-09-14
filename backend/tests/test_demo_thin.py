@@ -647,6 +647,55 @@ def test_run_builder_bounded_repair_stops_after_tail_salvage(monkeypatch, tmp_pa
     assert final.endswith("</body></html>")
 
 
+def test_run_builder_tail_salvage_chains_across_passes(monkeypatch, tmp_path):
+    """A big page cut mid-body needs the tail-continuation to CHAIN: each pass
+    appends only a chunk (still no </html>), so the next pass continues from
+    the NEW end until the document finally closes. One-shot 1200-token calls
+    re-truncate forever (measured on the live board)."""
+    import main as main_mod
+
+    monkeypatch.setattr(main_mod.hc, "HERMES_HOME", str(tmp_path))
+    ws = tmp_path / "wsTail"
+    ws.mkdir()
+    calls = []
+    chunk = ("<section id='reviews'><h2>Reviews</h2>"
+             + ("<p>" + "x" * 200 + "</p>") * 3 + "</section>")
+
+    def fake_execute(*, board, task_id, workspace, provider, model, prompt,
+                     objective="", artifact_name=None, api_key=None, max_tokens=None):
+        calls.append(artifact_name)
+        if artifact_name == "index-tail.html":
+            # Each tail call extends by a chunk but never closes </html> until
+            # the 3rd call, which appends the closing markup.
+            done = (Path(workspace) / "index-tail.html")
+            if calls.count("index-tail.html") >= 3:
+                done.write_text("</body></html>", encoding="utf-8")
+            else:
+                done.write_text(chunk, encoding="utf-8")
+        else:
+            (Path(workspace) / artifact_name).write_text(
+                ("<!doctype html><html><head><style>.hero { max-width: 650px; }\n"
+                 + "/*pad*/" * 60 +
+                 "\n</style></head><body><section id='hero'><h1>Cut</h1>"),
+                encoding="utf-8")  # truncated mid-body, no </html>
+        return {"ok": True, "elapsed_s": 1}
+
+    monkeypatch.setattr(main_mod.hc, "thin_execute", fake_execute)
+
+    out = main_mod._run_builder(
+        slug="flux-demo-regr", task_id="tb", workspace=str(ws),
+        provider="gemini", model="g", objective="Build a landing page for Nebula",
+        brief="plan", task_title=hc.DEMO_BUILDER_TITLE,
+        max_tokens=demo_llm.demo_builder_max_tokens("Build a landing page for Nebula"))
+
+    assert out.get("tail_completed") is True
+    # 3 chained tail calls (chunk, chunk, closing) until </html> appears
+    assert calls.count("index-tail.html") == 3
+    final = (ws / "index.html").read_text(encoding="utf-8")
+    assert final.endswith("</body></html>")
+    assert calls.count("index.html") == 3  # build + 2 repairs, then salvage
+
+
 def test_web_qa_unlinked_only_semantic_sections():
     """Form-field ids (#email etc.) are functional hooks, NOT 'walls the nav
     never reaches' — the unlinked-section check must stay semantic-only."""

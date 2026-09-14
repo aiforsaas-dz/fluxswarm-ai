@@ -1738,39 +1738,52 @@ def _append_missing_tail(*, slug: str, task_id: str, workspace: str, provider,
                          model, objective: str, api_key: str | None) -> bool:
     """Deterministic-bounded salvage for a TRUNCATED page: ask the model for
     ONLY the missing tail and append it. A full rebuild at the same token
-    ceiling just truncates again (measured twice), so this narrowly-scoped
-    continuation call (small budget, 'continue from the snippet') can always
-    close the document. Returns True when the composed file closes properly."""
+    ceiling just truncates again (measured twice), so these narrowly-scoped
+    continuation calls ('continue from the snippet') keep chaining: after each
+    small-budget call the doc ends further along, and the NEXT call continues
+    from the NEW end — a 33KB page cut mid-body needs several continuations,
+    not one. Stops the moment the document closes (</html>) or the tail stops
+    growing. Returns True when the composed file closes properly."""
     try:
         path = Path(workspace) / "index.html"
-        text = path.read_text(encoding="utf-8", errors="ignore")
-        if not text.strip():
-            return False
-        snippet = text[-220:].replace("`", "'").replace("```", "''")
-        prompt = (
-            "A single-file HTML page was cut off while being written. The "
-            "document so far ends with this snippet:\n\n```\n" + snippet +
-            "\n```\n\nContinue the document EXACTLY from where the snippet "
-            "ends. Output ONLY the missing remainder (no markdown fences, no "
-            "repeated snippet, no wrapper). If the body content/HTML markup "
-            "after the head/styles was never written yet, write it now. "
-            "Close every open tag and finish with </body></html>.\n"
-        )
-        res = hc.thin_execute(
-            board=slug, task_id=task_id, workspace=workspace,
-            provider=provider, model=model, prompt=prompt,
-            objective=objective, api_key=api_key,
-            artifact_name="index-tail.html", max_tokens=1200)
-        tail = (Path(workspace) / "index-tail.html").read_text(
-            encoding="utf-8", errors="ignore")
-        if res.get("ok") and tail.strip():
+        max_passes = 10
+        for _ in range(max_passes):
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            if not text.strip():
+                return False
+            if demo_llm.web_artifact_needs_repair(text) is False:
+                return True
+            snippet = text[-220:].replace("`", "'").replace("```", "''")
+            prompt = (
+                "A single-file HTML page was cut off while being written. The "
+                "document so far ends with this snippet:\n\n```\n" + snippet +
+                "\n```\n\nContinue the document EXACTLY from where the snippet "
+                "ends. Output ONLY the missing remainder (no markdown fences, "
+                "no repeated snippet, no wrapper). If the body content/HTML "
+                "markup after the head/styles was never written yet, write it "
+                "now — but stop as soon as this chunk is filled; a follow-up "
+                "call will continue from where you stop. Close every open tag "
+                "when you reach the end and finish with </body></html>.\n"
+            )
+            res = hc.thin_execute(
+                board=slug, task_id=task_id, workspace=workspace,
+                provider=provider, model=model, prompt=prompt,
+                objective=objective, api_key=api_key,
+                artifact_name="index-tail.html", max_tokens=1400)
+            tail = (Path(workspace) / "index-tail.html").read_text(
+                encoding="utf-8", errors="ignore")
+            if not (res.get("ok") and tail.strip()):
+                break
             combined = text + ("\n" if tail[:1] not in "\n\t " else "") + tail
+            if len(combined) <= len(text):
+                break
             path.write_text(combined, encoding="utf-8")
             try:
                 (Path(workspace) / "index-tail.html").unlink()
             except Exception:
                 pass
-            return demo_llm.web_artifact_needs_repair(combined) is False
+            if demo_llm.web_artifact_needs_repair(combined) is False:
+                return True
     except Exception:
         pass
     return False
