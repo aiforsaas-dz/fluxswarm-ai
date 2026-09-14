@@ -489,7 +489,7 @@ document.addEventListener("click",ev=>{
 });
 
 function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),3000);}
-function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
 function t(k){const v=I18N[LANG][k];return v!==undefined?v:k;}
 function fmt(k,...args){let s=I18N[LANG][k];if(s===undefined)s=k;args.forEach(a=>{s=s.replace(/\{(\w+)\}/,a);});return s;}
 function errt(m){return m||"";}
@@ -834,7 +834,7 @@ const I18N = {
     ag_name:"Agent name", ag_obj:"Mission (what it must produce)", ag_skills:"Skills (optional, comma separated)",
     ag_create:"➕ Create agent", ag_fields:"Provide a name and a mission", ag_fail:"Create agent failed", ag_created:"Agent created",
     agents_list:"My agents", agents_empty:"No custom agents yet — create your first one above.", agents_login_empty:"Sign in to manage custom agents.",
-    ag_delete:"Delete", ag_delete_fail:"Delete failed", ag_deleted:"Agent deleted", ag_delete_confirm:"Delete this custom agent? It will be removed from your account."
+    ag_delete:"Delete", ag_delete_fail:"Delete failed", ag_deleted:"Agent deleted", ag_delete_confirm:"Delete this custom agent? It will be removed from your account.",
     skills_lbl:"Skills:", per_pack:"one-time credit pack", credits_line:"{c} credits · parallel x{p}",
     desc_demo:"Free trial — no card required", desc_starter:"For freelancers & small projects", desc_pro:"For small teams", desc_scale:"For companies & agencies", desc_topup:"Quick refill — credits never expire",
     feat_full:"Full squad (6 agents)", feat_credit:"1 credit per launch", feat_live:"Live board stream", feat_tg:"Telegram bot",
