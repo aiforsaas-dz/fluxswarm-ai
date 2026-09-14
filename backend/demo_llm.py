@@ -27,6 +27,10 @@ _COMPLETION_TIMEOUT_S = int(os.environ.get("FLUXSWARM_DEMO_LLM_TIMEOUT_S", "300"
 # builder lane (the artifact the user actually sees in /p/) gets a much larger
 # output budget. Operators cap it per-env. 3000 tokens ≈ 2-4k words of HTML.
 _BUILDER_MAX_TOKENS = int(os.environ.get("FLUXSWARM_BUILDER_MAX_TOKENS", "3000"))
+# Generic (non-web) build deliverables (app.py, README.md, …) get an upgraded
+# dedicated budget so real project code comes back COMPLETE, not truncated.
+# The short plan/arch/devops/tdd/review lanes keep the lean default.
+_DELIVERABLE_MAX_TOKENS = int(os.environ.get("FLUXSWARM_DELIVERABLE_MAX_TOKENS", "2400"))
 _NORMAL_MAX_TOKENS = 800
 
 # Demo builder budget: big enough for a complete single-file page but small
@@ -176,7 +180,7 @@ def builder_max_tokens(objective: str = "") -> int:
     """Output-budget for the final deliverable lane (what /p/ renders live)."""
     if not objective or _is_web_objective(objective) or "html" in (objective or "").lower():
         return _BUILDER_MAX_TOKENS
-    return _NORMAL_MAX_TOKENS
+    return _DELIVERABLE_MAX_TOKENS
 
 
 def demo_builder_max_tokens(objective: str = "") -> int:
@@ -184,7 +188,7 @@ def demo_builder_max_tokens(objective: str = "") -> int:
     timeout on the free pool while still yielding a complete single file."""
     if not objective or _is_web_objective(objective) or "html" in (objective or "").lower():
         return _DEMO_BUILDER_MAX_TOKENS
-    return _NORMAL_MAX_TOKENS
+    return _DELIVERABLE_MAX_TOKENS
 
 
 def lane_max_tokens(objective: str, artifact_name: str | None) -> int:
@@ -195,7 +199,21 @@ def lane_max_tokens(objective: str, artifact_name: str | None) -> int:
     return _NORMAL_MAX_TOKENS
 
 
-def planner_prompt(task_title: str, objective: str) -> str:
+def _codebase_block(codebase_ctx: str = "") -> str:
+    """Standard injected codebase context block for every lane prompt."""
+    ctx = (codebase_ctx or "").strip()
+    if not ctx:
+        return ""
+    return (
+        "\n\nREFERENCE CODEBASE (an uploaded project you are improving):\n"
+        f"{ctx}\n"
+        "STUDY the file tree and config above, and make your plan / architecture / "
+        "tests / review consistent with it. Preserve working structure, naming and "
+        "framework choices unless the objective explicitly demands a change.\n"
+    )
+
+
+def planner_prompt(task_title: str, objective: str, codebase_ctx: str = "") -> str:
     prefix = " Deliver the site as ONE self-contained index.html." if _is_web_objective(objective) else ""
     return (
         f"Task: {task_title}\n\n"
@@ -211,6 +229,7 @@ def planner_prompt(task_title: str, objective: str) -> str:
         "menu list dish categories; for landings list features/testimonials/"
         "pricing — each section must be filled with actual copy when built."
         f"{prefix}"
+        f"{_codebase_block(codebase_ctx)}"
         " Do not write any files.\n"
     )
 
@@ -258,7 +277,8 @@ def plan_to_brief(plan_text: str, fallback: str = "") -> str:
 
 
 def builder_prompt(task_title: str, objective: str, plan: str,
-                   repair: bool = False, qa: list[str] | None = None) -> str:
+                   repair: bool = False, qa: list[str] | None = None,
+                   codebase_ctx: str = "") -> str:
     if _is_web_objective(objective):
         deliverable = (
             "The objective is a WEBSITE / WEB APP — produce ONE self-contained "
@@ -291,6 +311,7 @@ def builder_prompt(task_title: str, objective: str, plan: str,
         f"{deliverable} "
         "Output ONLY the file content — no commentary, no markdown fences, no "
         "``` code blocks."
+        f"{_codebase_block(codebase_ctx)}"
         f"{fix}\n"
     )
 
@@ -642,52 +663,60 @@ def deliverable_filename(objective: str) -> str:
     return "deliverable.md"
 
 
-def architect_prompt(task_title: str, objective: str) -> str:
+def architect_prompt(task_title: str, objective: str, codebase_ctx: str = "") -> str:
     return (
         f"Task: {task_title}\n\n"
         f"Objective: {objective}\n\n"
         "Act as the Architect. Produce a SHORT architecture document (at most "
         "20 lines, plain text, no markdown fences) covering components, data "
         "flow, and the key interfaces of the solution. This becomes "
-        "ARCHITECTURE.md. Output only the document text.\n"
+        "ARCHITECTURE.md. Output only the document text."
+        f"{_codebase_block(codebase_ctx)}\n"
     )
 
 
-def devops_prompt(task_title: str, objective: str, plan: str = "") -> str:
+def devops_prompt(task_title: str, objective: str, plan: str = "",
+                  codebase_ctx: str = "") -> str:
     return (
         f"Task: {task_title}\n\n"
         f"Objective: {objective}\n\n"
         "Act as the DevOps engineer. Output ONLY a production-ready Dockerfile "
         "(plain text, no markdown fences, no commentary) that would containerize "
-        "this project as a simple Python or static web service.\n"
+        "this project as a simple Python or static web service."
+        f"{_codebase_block(codebase_ctx)}\n"
     )
 
 
-def tdd_prompt(task_title: str, objective: str, brief: str = "") -> str:
+def tdd_prompt(task_title: str, objective: str, brief: str = "",
+               codebase_ctx: str = "") -> str:
     return (
         f"Task: {task_title}\n\n"
         f"Objective: {objective}\n\n"
         "Act as the TDD specialist. Output ONLY the Python source of a pytest "
         "test suite (plain text, no markdown fences) with 3-6 focused tests for "
         "the core behavior described in the objective. No commentary outside "
-        "the code.\n"
+        "the code."
+        f"{_codebase_block(codebase_ctx)}\n"
     )
 
 
-def reviewer_prompt(task_title: str, objective: str, brief: str = "") -> str:
+def reviewer_prompt(task_title: str, objective: str, brief: str = "",
+                    codebase_ctx: str = "") -> str:
     return (
         f"Task: {task_title}\n\n"
         f"Objective: {objective}\n\n"
         f"Project artifacts produced so far:\n{(brief or '(none)')[:2000]}\n\n"
         "Act as the Reviewer. Output a SHORT review (at most 15 lines, plain "
         "text) listing the strengths and any gaps or risks in the artifacts "
-        "relative to the objective. This becomes REVIEW.md.\n"
+        "relative to the objective. This becomes REVIEW.md."
+        f"{_codebase_block(codebase_ctx)}\n"
     )
 
 
 def custom_agent_prompt(task_title: str, objective: str,
                         agent_name: str, agent_objective: str,
-                        skills: str = "", project_goal: str = "") -> str:
+                        skills: str = "", project_goal: str = "",
+                        codebase_ctx: str = "") -> str:
     """Prompt for a user-defined squad member (P4 custom agents).
 
     The user-defined agent name/objective/skills drive the prompt; the launch
@@ -702,5 +731,6 @@ def custom_agent_prompt(task_title: str, objective: str,
         f"{skill_line}"
         "Produce a SINGLE self-contained markdown document (``# `` title, short "
         "sections) that a project team can act on — the deliverable for your "
-        "lane. Do not write files; output only the document text.\n"
+        "lane. Do not write files; output only the document text."
+        f"{_codebase_block(codebase_ctx)}\n"
     )

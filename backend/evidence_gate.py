@@ -28,6 +28,27 @@ def _parse_ok(path: Path) -> bool:
         return False
 
 
+def _python_import_targets(path: Path) -> set[str]:
+    """Top-level import targets (module or package bases) used in a Python file.
+
+    Used by the code-aware gate: tests should ideally reference the project's
+    own code, not only the standard library. Best-effort and tolerant.
+    """
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8", errors="ignore"))
+    except Exception:
+        return set()
+    targets: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                targets.add((a.name.split(".")[0] or "").strip())
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                targets.add((node.module.split(".")[0] or "").strip())
+    return {t for t in targets if t}
+
+
 def _non_empty(path: Path) -> bool:
     return path.is_file() and path.stat().st_size > 0
 
@@ -87,6 +108,31 @@ def collect_evidence(workspace: str, goal: str = "") -> dict:
     file_count = sum(1 for _ in root.rglob("*") if _.is_file())
     checks.append({"name": "workspace_file_count", "status": "pass" if file_count >= 3 else "warn",
                     "detail": f"{file_count} file(s) in workspace"})
+
+    # --- 4.5 code-aware check (uploaded-project launches only) -------------
+    # When a codebase snapshot was seeded into _SOURCE/, the tests should
+    # reference the project's OWN modules (not only stdlib) — strong signal the
+    # TDD lane actually looked at the real code.  NO-GO only when source exists
+    # but the test artifact is entirely stdlib-only (failed to engage).
+    source_dir = root / "_SOURCE"
+    if source_dir.is_dir() and any(source_dir.rglob("*.py")):
+        source_py = [p for p in source_dir.rglob("*.py")
+                     if not p.name.startswith("__")]
+        source_bases = {p.stem for p in source_py if p.stem}
+        if not source_bases:
+            source_bases = {p.parent.name for p in source_py if p.parent.name and p.parent != source_dir}
+        test_imports = _python_import_targets(test_path) if _non_empty(test_path) else set()
+        hits = source_bases & test_imports
+        if hits:
+            checks.append({"name": "tests_reference_source", "status": "pass",
+                            "detail": f"tests import project module(s): {', '.join(sorted(hits)[:5])}"})
+        elif _non_empty(test_path):
+            checks.append({"name": "tests_reference_source", "status": "warn",
+                            "detail": "uploaded source exists but tests import no project module "
+                                      "(stdlib-only?) — verify tests target the real code"})
+        else:
+            checks.append({"name": "tests_reference_source", "status": "warn",
+                            "detail": "uploaded source exists but no test artifact produced"})
 
     # --- 5. web QA (critical for web goals) ---
     if _web_goal(goal):

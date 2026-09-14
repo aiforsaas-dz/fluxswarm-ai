@@ -135,7 +135,9 @@ def test_web_intent_guidance_in_prompts():
 def test_builder_token_budget_scales_with_web_goals():
     assert demo_llm.builder_max_tokens("a landing page") > 400
     assert demo_llm.builder_max_tokens("build a dashboard UI") > 400
-    assert demo_llm.builder_max_tokens("a REST API") == demo_llm._NORMAL_MAX_TOKENS
+    # Non-web deliverables now get the larger dedicated builder budget (so real
+    # project code comes back complete), while doc lanes keep the lean budget.
+    assert demo_llm.builder_max_tokens("a REST API") == demo_llm._DELIVERABLE_MAX_TOKENS
     assert demo_llm.lane_max_tokens("a landing page", None) > 400
     assert demo_llm.lane_max_tokens("a REST API", "PLAN.md") == demo_llm._NORMAL_MAX_TOKENS
 
@@ -430,9 +432,10 @@ def test_run_builder_accepts_demo_call_shape(monkeypatch, tmp_path):
 def test_demo_builder_token_budget_is_web_scaled():
     assert demo_llm.demo_builder_max_tokens("Build a landing page") \
         >= demo_llm.builder_max_tokens("Build a landing page")
+    # Non-web builders use the upgraded deliverable budget (was 800).
     assert demo_llm.demo_builder_max_tokens("make a CLI tool") \
         == demo_llm.builder_max_tokens("make a CLI tool") \
-        == demo_llm._NORMAL_MAX_TOKENS
+        == demo_llm._DELIVERABLE_MAX_TOKENS
 
 
 def test_planner_prompt_asks_for_structured_json_plan():

@@ -138,3 +138,65 @@ def test_api_analyze_rejects_empty_form():
     r = client.post("/api/project/analyze", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 400
     assert "No project file uploaded" in r.json()["detail"]
+
+
+# --- codebase snapshot ------------------------------------------------
+
+def test_analyze_zip_extracts_codebase_snapshot():
+    data = _zx({
+        "src/app.py": "def main():\n    return 'hi'\n",
+        "requirements.txt": "fastapi\nuvicorn\n",
+        "README.md": "# Project\n",
+    })
+    m = pa.analyze_zip(data)
+    snap = m.get("codebase_snapshot", {})
+    assert snap.get("file_tree"), "file tree should be present"
+    # app.py + requirements.txt are both high-priority; both should be extracted
+    paths = {k["path"] for k in snap.get("key_files", [])}
+    assert "src/app.py" in paths, f"app.py missing from snapshot: {paths}"
+    # config summary should include requirements.txt as a config file
+    assert "requirements.txt" in snap.get("config_summary", "")
+    assert snap.get("total_source_bytes", 0) > 0
+
+
+def test_analyze_zip_snapshot_bounded_line_truncation():
+    big = "\n".join(f"print({i})" for i in range(200))
+    assert len(big.splitlines()) > 150
+    data = _zx({"app.py": big})
+    m = pa.analyze_zip(data)
+    snap = m["codebase_snapshot"]
+    keyfile = snap["key_files"][0]["content"]
+    assert "... [" in keyfile, "long file should carry the truncation marker"
+
+
+def test_analyze_cache_consumed_on_next_launch(monkeypatch):
+    """The analyze call caches the snapshot per user; the next create-project
+    consumes it (popped) so a second launch does not reuse the same context."""
+    # Don't actually touch the board/CLI in a unit test — return a thin-shaped
+    # swarm and skip background dispatch (threaded provider calls).
+    monkeypatch.setattr(main_mod.hc, "projects_are_thin", lambda: True)
+    monkeypatch.setattr(main_mod.hc, "launch_project_thin",
+                        lambda *a, **k: {"root_id": "t1", "worker_ids": [],
+                                         "verifier_id": None, "synthesizer_id": None})
+    monkeypatch.setattr(main_mod, "_fire_dispatch", lambda *a, **k: None)
+    token = _register()
+    data = _zx({"src/app.py": "def main():\n    return 1\n",
+                "requirements.txt": "fastapi\n"})
+    r = client.post("/api/project/analyze", headers={"Authorization": f"Bearer {token}"},
+                    files={"file": ("proj.zip", data, "application/zip")})
+    assert r.status_code == 200
+    me = client.get("/api/me", headers={"Authorization": f"Bearer {token}"})
+    assert me.status_code == 200
+    uid = me.json()["id"]
+    with main_mod._analysis_cache_lock:
+        cached = main_mod._analysis_cache.get(uid)
+    assert cached, "snapshot should be cached per user"
+    assert cached["manifest"].get("file_tree"), "cached entry should have a file tree"
+    # First launch consumes the snapshot context (even if dispatch is no-op'd).
+    r2 = client.post("/api/projects", headers={"Authorization": f"Bearer {token}"},
+                     json={"name": "Test", "goal": "Improve this project",
+                           "agent_ids": []})
+    assert r2.status_code == 200, r2.text
+    with main_mod._analysis_cache_lock:
+        gone = main_mod._analysis_cache.get(uid)
+    assert gone is None, "cached context should be consumed by the first launch"

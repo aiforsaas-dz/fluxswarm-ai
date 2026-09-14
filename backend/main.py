@@ -850,14 +850,16 @@ def _project_by_pid(pid: int) -> dict | None:
 
 def _fire_dispatch(slug: str, plan: str, provider_keys=None, pid: int | None = None,
                    goal: str | None = None,
-                   custom_agents: list[dict] | None = None) -> None:
+                   custom_agents: list[dict] | None = None,
+                   context_payload: dict | None = None) -> None:
     """Fire whichever driver owns this host: the thin in-process project driver
     on small-memory hosts (the fat Hermes worker OOMs a 512 MB container
     ~40-80s into work — measured), otherwise the fat multi-wave dispatcher."""
     if hc.projects_are_thin():
         threading.Thread(target=_bg_thin_project, args=(slug, goal or ""),
                          kwargs={"provider_keys": provider_keys, "pid": pid,
-                                 "custom_agents": custom_agents},
+                                 "custom_agents": custom_agents,
+                                 "context_payload": context_payload},
                          daemon=True).start()
     else:
         threading.Thread(target=_bg_dispatch, args=(slug, plan),
@@ -923,7 +925,8 @@ def _insert_gate_event(slug: str, task_id: str, evidence: dict) -> None:
 
 
 def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None = None,
-                     custom_agents: list[dict] | None = None) -> None:
+                     custom_agents: list[dict] | None = None,
+                     context_payload: dict | None = None) -> None:
     """Drive the thin 6-lane project squad to completion in a daemon thread.
 
     Planner -> Architect -> DevOps -> TDD -> Reviewer -> Builder, each a REAL
@@ -937,6 +940,11 @@ def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None =
     ``{"id", "name", "objective", "skills"}`` added as extra lanes
     (assignee ``ca-<id>``). Each runs after Reviewer and before Builder with a
     real provider completion writing ``CUSTOM_<name>.md`` into the workspace.
+
+    ``context_payload``: optional codebase snapshot from a prior analyze call.
+    The snapshot's key files are seeded into the workspace under ``_SOURCE/``
+    so agents can reference real code. The file tree + config summary is
+    injected into every prompt as context.
     """
     provider = model = api_key = None
     try:
@@ -950,19 +958,47 @@ def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None =
         if not by_role.get("ecc-planner"):
             raise RuntimeError(f"thin project board {slug} has no squad tasks")
         ws_root = hc.project_workspace_dir(slug)
+        # ---- Seed uploaded source code into workspace for agent reference ----
+        # Agents that know the real code produce far better plans / architectures /
+        # tests than blind generation.  Source goes into _SOURCE/ so it's visible
+        # but doesn't collide with generated artifacts.
+        codebase_ctx = ""
+        if context_payload:
+            # context_payload may be the raw manifest (old/larger shape) or the
+            # snapshot dict directly (current cache shape) — normalize both.
+            snapshot = context_payload.get("codebase_snapshot", context_payload)
+            if not isinstance(snapshot, dict):
+                snapshot = {}
+            source_dir = ws_root / "_SOURCE"
+            try:
+                source_dir.mkdir(parents=True, exist_ok=True)
+                # Write key files so agents can read them directly
+                for kf in snapshot.get("key_files", []):
+                    fp = source_dir / kf["path"].replace("\\", "/")
+                    fp.parent.mkdir(parents=True, exist_ok=True)
+                    fp.write_text(kf.get("content", ""), encoding="utf-8", errors="replace")
+                # Build the compact context string for prompts
+                parts = []
+                if snapshot.get("file_tree"):
+                    parts.append(f"PROJECT FILE TREE:\n{snapshot['file_tree']}")
+                if snapshot.get("config_summary"):
+                    parts.append(f"CONFIG FILES:\n{snapshot['config_summary']}")
+                codebase_ctx = "\n\n".join(parts)[:6000]
+            except Exception:
+                codebase_ctx = ""
         lanes = [
             ("ecc-planner", "PLAN.md",
-             lambda brief: demo_llm.planner_prompt(hc.SQUAD[0][2], goal)),
+             lambda brief: demo_llm.planner_prompt(hc.SQUAD[0][2], goal, codebase_ctx=codebase_ctx)),
             ("ecc-architect", "ARCHITECTURE.md",
-             lambda brief: demo_llm.architect_prompt(hc.SQUAD[1][2], goal)),
+             lambda brief: demo_llm.architect_prompt(hc.SQUAD[1][2], goal, codebase_ctx=codebase_ctx)),
             ("ecc-devops", "Dockerfile",
-             lambda brief: demo_llm.devops_prompt(hc.SQUAD[2][2], goal)),
+             lambda brief: demo_llm.devops_prompt(hc.SQUAD[2][2], goal, codebase_ctx=codebase_ctx)),
             ("ecc-tdd", "tests/test_app.py",
-             lambda brief: demo_llm.tdd_prompt(hc.SQUAD[3][2], goal)),
+             lambda brief: demo_llm.tdd_prompt(hc.SQUAD[3][2], goal, codebase_ctx=codebase_ctx)),
             ("ecc-reviewer", "REVIEW.md",
-             lambda brief: demo_llm.reviewer_prompt(hc.VERIFIER[2], goal, brief)),
+             lambda brief: demo_llm.reviewer_prompt(hc.VERIFIER[2], goal, brief, codebase_ctx=codebase_ctx)),
             ("ecc-build-fixer", None,
-             lambda brief: demo_llm.builder_prompt(hc.SYNTHESIZER[2], goal, brief)),
+             lambda brief: demo_llm.builder_prompt(hc.SYNTHESIZER[2], goal, brief, codebase_ctx=codebase_ctx)),
         ]
         brief = ""
         evidence = None
@@ -1003,7 +1039,8 @@ def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None =
                         _doc(ws_root / "PLAN.md"),
                         fallback=_ws_brief(ws_root)),
                     task_title=hc.SYNTHESIZER[2],
-                    api_key=api_key)
+                    api_key=api_key,
+                    codebase_ctx=codebase_ctx)
             else:
                 hc.thin_execute(board=slug, task_id=tid, workspace=str(ws_root),
                                 provider=provider, model=model,
@@ -1037,7 +1074,8 @@ def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None =
                                 agent_name=name,
                                 agent_objective=(agent.get("objective") or "").strip() or name,
                                 skills=(agent.get("skills") or "").strip(),
-                                project_goal=goal),
+                                project_goal=goal,
+                                codebase_ctx=codebase_ctx),
                             objective=goal,
                             artifact_name=f"CUSTOM_{_safe_artifact_name(name)}.md",
                             api_key=api_key,
@@ -1882,7 +1920,8 @@ def _append_missing_content(*, slug: str, task_id: str, workspace: str,
 
 def _run_builder(*, slug: str, task_id: str, workspace: str, provider, model,
                  objective: str, brief: str, task_title: str,
-                 api_key: str | None = None, max_tokens: int | None = None) -> dict:
+                 api_key: str | None = None, max_tokens: int | None = None,
+                 codebase_ctx: str = "") -> dict:
     """Build the final deliverable lane, with ONE automatic QA re-run.
 
     The builder's artifact is what /p/ renders live, so its output gets a
@@ -1896,7 +1935,8 @@ def _run_builder(*, slug: str, task_id: str, workspace: str, provider, model,
             board=slug, task_id=task_id, workspace=workspace,
             provider=provider, model=model,
             prompt=demo_llm.builder_prompt(task_title, objective, brief,
-                                           repair=repair, qa=qa),
+                                           repair=repair, qa=qa,
+                                           codebase_ctx=codebase_ctx),
             objective=objective, api_key=api_key,
             artifact_name=demo_llm.deliverable_filename(objective),
             max_tokens=max_tokens or demo_llm.builder_max_tokens(objective))
@@ -2471,6 +2511,20 @@ def api_create_project(payload: ProjectCreate, request: Request,
     slug = make_project_slug(user["id"])
     keys = _user_provider_keys(user)
     custom_agents = _resolve_custom_agents(user, payload.agent_ids)
+    # Pull the cached analysis snapshot (uploaded project codebase) so agents can
+    # plan/improve against the real source.  TTL'd, per-user, best-effort: if it
+    # expired or was never uploaded, the launch proceeds with goal text only.
+    context_payload = None
+    with _analysis_cache_lock:
+        cached = _analysis_cache.get(user["id"])
+        if cached and time.time() - cached.get("ts", 0) < _ANALYSIS_CACHE_TTL_S:
+            context_payload = cached.get("manifest")
+            _analysis_cache.pop(user["id"], None)  # consumed-once semantics
+    if context_payload:
+        _snap = context_payload.get("codebase_snapshot", context_payload) if isinstance(context_payload, dict) else {}
+        audit.audit("project.context", uid=user["id"], email=user["email"],
+                    ip=_client_ip(request), outcome="ok", slug=slug,
+                    source_bytes=((_snap or {}).get("total_source_bytes", 0) if isinstance(_snap, dict) else 0))
     # Phase F: append the provider-usage ledger row with the ACTUAL resolved
     # runtime (BYOK beats operator default) before the launch. Best-effort:
     # accounting must never change launch behavior.
@@ -2507,7 +2561,7 @@ def api_create_project(payload: ProjectCreate, request: Request,
         raise HTTPException(status_code=500, detail="Failed to launch swarm")
     pid = db.add_project(user["id"], slug, payload.name or "Project", goal)
     _fire_dispatch(slug, user["plan"], _user_provider_keys(user), pid=pid, goal=goal,
-                   custom_agents=custom_agents)
+                   custom_agents=custom_agents, context_payload=context_payload)
     audit.audit("project.create", uid=user["id"], email=user["email"], ip=_client_ip(request),
                 outcome="ok", slug=slug, plan=user["plan"])
     return _swarm_payload(slug, payload.goal, swarm)
@@ -2518,9 +2572,10 @@ async def api_project_analyze(request: Request,
                               user: dict = Depends(get_current_user)):
     """Accept a project ZIP, analyze it in memory, return a bounded manifest.
 
-    No disk writes; no credit spent; do-not-use (420-demand) upload size caps and
-    traversal guards are enforced inside project_analyzer. The manifest can be
-    attached to a later launch so the swarm builds against an existing repo.
+    No disk writes; no credit spent; upload size caps and traversal guards are
+    enforced inside project_analyzer.  The manifest — including the codebase
+    snapshot — is cached server-side so the next launch injects real source
+    context into every agent prompt.
     """
     form = await request.form()
     up = form.get("file")
@@ -2533,9 +2588,24 @@ async def api_project_analyze(request: Request,
         audit.audit("project.analyze", uid=user["id"], email=user["email"],
                     ip=_client_ip(request), outcome="rejected", reason=str(e)[:200])
         raise HTTPException(status_code=400, detail=str(e))
+    # Cache the codebase snapshot (bounded source context) so the next launch can
+    # inject real source without re-uploading.  TTL-bounded, per-user, capped so
+    # a 512MB free host never accumulates more than ~10MB of cached snapshots.
+    with _analysis_cache_lock:
+        _analysis_cache[user["id"]] = {
+            "manifest": manifest.get("codebase_snapshot", {}),
+            "ts": time.time(),
+        }
+        if len(_analysis_cache) > 160:
+            now = time.time()
+            expired = [k for k, v in _analysis_cache.items()
+                       if now - v.get("ts", 0) > _ANALYSIS_CACHE_TTL_S]
+            for k in expired[:80]:
+                _analysis_cache.pop(k, None)
     audit.audit("project.analyze", uid=user["id"], email=user["email"],
                 ip=_client_ip(request), outcome="ok",
-                files=manifest["files_count"], bytes_=manifest["total_bytes"])
+                files=manifest["files_count"], bytes_=manifest["total_bytes"],
+                has_snapshot=bool(manifest.get("codebase_snapshot", {}).get("key_files")))
     return manifest
 
 
@@ -2585,6 +2655,14 @@ _EXPORT_PAID_HOURLY_CAP = int(os.environ.get("FLUXSWARM_EXPORT_PAID_HOURLY_CAP",
 _EXPORT_MAX_ZIP_BYTES = int(os.environ.get("FLUXSWARM_EXPORT_MAX_ZIP_BYTES", "62914560"))
 _export_hits: dict[str, list[float]] = {}
 _export_lock = threading.Lock()
+
+# ---- Project analysis cache ------------------------------------------------
+# Keeps the latest analysis snapshot (manifest + codebase content) per user
+# between the analyze call and the next launch.  Bounded: at most one entry per
+# user (overwritten), TTL'd, max entries capped so memory stays bounded.
+_analysis_cache: dict[int, dict] = {}
+_analysis_cache_lock = threading.Lock()
+_ANALYSIS_CACHE_TTL_S = 600  # 10 minutes
 
 
 def _export_allowed(uid: int, plan: str) -> bool:
