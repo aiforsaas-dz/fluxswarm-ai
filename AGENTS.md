@@ -7,7 +7,8 @@
 - If the user requests a verbose deliverable (proposal/analysis/prompt), produce exactly that and nothing more.
 
 ## Environment / Procedure
-- Repo: `aiforsaas-dz/fluxswarm-ai` (local dev in `D:\Projects\fluxswarm`). Windows PowerShell 5.1.
+- Repo: `aiforsaas-dz/fluxswarm-ai` — SOLE canonical remote for this project; always push there (NEVER anywhere else). Local dev in `D:\Projects\fluxswarm`. Windows PowerShell 5.1.
+- Git push: remote `origin = https://github.com/aiforsaas-dz/fluxswarm-ai.git`. The stale machine credential `Zaindev-lab` lacks push access — do NOT push with it. Use the `aiforsaas-dz` PAT via session-only header: `$basic=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("ZINELABIDINE:$tok"))` then `git -c "http.extraHeader=Authorization: Basic $basic" -c credential.helper= push origin master` (never write the token to a file).
 - No direct `python`; use `uv run --python 3.11` (py_compile) and `uv run --with-requirements backend/requirements.txt --with pytest pytest backend/tests [file::test] -q` for tests.
 - PowerShell mangles JSON quotes in curl `-d`: write JSON to a temp file (UTF-8, no BOM) and use `curl.exe --data-binary "@file"`. Uploads via `curl.exe -F`.
 - Render service id `srv-dajumhrm8hqs739pqajg`, URL `https://fluxswarm-i1br.onrender.com`.
