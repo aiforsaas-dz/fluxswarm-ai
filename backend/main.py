@@ -2400,6 +2400,8 @@ def api_demo_micro(request: Request, goal: str = "Build a todo app"):
     globally (200/day). Returns a deterministic plan locally — the actual demo
     launch consumes the provider pool.
     """
+    if _operator_maintenance():
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable — please try again later")
     demo_user = _demo_user(request)
     if demo_user and db.get_admt_opt_out(demo_user["id"]):
         raise HTTPException(status_code=403,
@@ -2812,6 +2814,11 @@ def api_create_project(payload: ProjectCreate, request: Request,
         raise HTTPException(status_code=400, detail="Please enter a build goal")
     if len(payload.goal or "") > 4000:
         raise HTTPException(status_code=400, detail="Goal exceeds the maximum length")
+    # Operator kill-switch (Phase 4): project creation launches a real agent
+    # team and debits a credit, so the cost-bearing surface must honour the
+    # switch — BEFORE any credit is debited or work is fired.
+    if _operator_maintenance():
+        raise HTTPException(status_code=503, detail="Service temporarily unavailable — please try again later")
     # CCPA/CPRA ADMT opt-out: manual project creation ONLY — no AI agents are
     # spawned, no credit is debited, and dispatch stays blocked for the user.
     if db.get_admt_opt_out(user["id"]):
