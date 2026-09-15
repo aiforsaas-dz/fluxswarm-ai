@@ -242,9 +242,15 @@ def test_builder_token_budget_scales_with_web_goals():
     assert demo_llm.builder_max_tokens("build a dashboard UI") > 400
     # Non-web deliverables now get the larger dedicated builder budget (so real
     # project code comes back complete), while doc lanes keep the lean budget.
-    assert demo_llm.builder_max_tokens("a REST API") == demo_llm._DELIVERABLE_MAX_TOKENS
+    assert demo_llm.builder_max_tokens("a CLI tool") == demo_llm._DELIVERABLE_MAX_TOKENS
     assert demo_llm.lane_max_tokens("a landing page", None) > 400
-    assert demo_llm.lane_max_tokens("a REST API", "PLAN.md") == demo_llm._NORMAL_MAX_TOKENS
+    assert demo_llm.lane_max_tokens("a CLI tool", "PLAN.md") == demo_llm._NORMAL_MAX_TOKENS
+    # Complex multi-file goals (auth/db/api + UI) keep the web budget AND get
+    # multi-file headroom so the pack isn't truncated by the single-file cap.
+    assert demo_llm.builder_max_tokens(
+        "a SaaS dashboard with login and a database") > demo_llm._BUILDER_MAX_TOKENS
+    assert demo_llm.builder_max_tokens(
+        "a FastAPI REST API with token auth") > demo_llm._BUILDER_MAX_TOKENS
 
 
 def test_web_artifact_qa_gate_catches_broken_deliverables():

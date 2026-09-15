@@ -28,7 +28,7 @@ import time
 from pathlib import Path
 from urllib.parse import quote as urlquote
 
-from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
                                PlainTextResponse, RedirectResponse, Response)
@@ -818,6 +818,15 @@ def _finalize_launch(slug: str, pid: int, *, status: str, outcome: str, reason: 
             db.update_provider_usage_outcome(slug, ok=int(status == "ok"))
         except Exception:
             pass
+        # Knowledge-graph integrations on successful completion (best-effort,
+        # never blocks bookkeeping).  Cognee seeds the entity graph; Understand
+        # Anything generates an interactive workspace knowledge graph.
+        if status == "ok":
+            try:
+                import integrations
+                integrations.on_project_completed(slug)
+            except Exception:
+                pass
         if outcome != "converged":
             # Seal the board NOW: kill any leftover workers and park its non-
             # terminal tasks as blocked, so the abandoned board stops holding
@@ -2002,8 +2011,50 @@ def _run_builder(*, slug: str, task_id: str, workspace: str, provider, model,
     (the Designer's DESIGN.md) is injected so the page is built TO a concrete
     palette/type/token system instead of improvised colors."""
 
+    def _split_pack() -> dict:
+        """Split a multi-file builder pack (==== FILE: markers) into separate
+        workspace files.
+
+        The primary artifact (index.html / app.py / …) keeps the text before
+        the first marker; every extra file is written under its relative path —
+        where /p/, the export zip and the Project Files browser already serve
+        it.  Returns {file_or_skip_flag: reason} for the driver to log.  Re-run
+        on EVERY attempt so a repair pass that re-emits the pack re-splits
+        cleanly (index.html is rewritten from the primary part only).
+        """
+        artifact = demo_llm.deliverable_filename(objective)
+        try:
+            raw_text = (Path(workspace) / artifact).read_text(
+                encoding="utf-8", errors="ignore")
+        except Exception:
+            return {}
+        files = demo_llm.split_artifact(raw_text)
+        if len(files) == 1 and "" in files:
+            return {}
+        primary = files.get("", raw_text)
+        skipped = files.pop("_skipped", None)
+        if primary:
+            (Path(workspace) / artifact).write_text(primary, encoding="utf-8")
+        written: list[str] = []
+        for rel, content in files.items():
+            if not rel or not content:
+                continue
+            target = Path(workspace) / rel
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+                written.append(rel)
+            except OSError:
+                skipped = (skipped or "") + f"\n==== {rel}" + content
+        info: dict = {}
+        if written:
+            info["files_built"] = written
+        if skipped:
+            info["pack_skipped"] = skipped.strip()[:400]
+        return info
+
     def _execute(repair: bool = False, qa: list[str] | None = None) -> dict:
-        return hc.thin_execute(
+        result = hc.thin_execute(
             board=slug, task_id=task_id, workspace=workspace,
             provider=provider, model=model,
             prompt=demo_llm.builder_prompt(task_title, objective, brief,
@@ -2013,6 +2064,10 @@ def _run_builder(*, slug: str, task_id: str, workspace: str, provider, model,
             objective=objective, api_key=api_key,
             artifact_name=demo_llm.deliverable_filename(objective),
             max_tokens=max_tokens or demo_llm.builder_max_tokens(objective))
+        result.update(_split_pack())
+        return result
+
+    out = _execute()
 
     def _audit() -> tuple[str, list[str], bool, int]:
         try:
@@ -2024,7 +2079,6 @@ def _run_builder(*, slug: str, task_id: str, workspace: str, provider, model,
         return (text, issues, demo_llm.web_artifact_needs_repair(text),
                 demo_llm.web_deliverable_score(text))
 
-    out = _execute()
     if out.get("ok") and demo_llm.deliverable_filename(objective) == "index.html":
         text, issues, needs, score = _audit()
         # Bounded repair loop: re-audit AFTER every repair, because a repair
@@ -2718,6 +2772,64 @@ def api_workspace(slug: str, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail="Failed to read workspace")
 
 
+# ---------- Project Files: upload / browse / remove (edit-after-build) -----
+# Customers upload files (images, specs, source) into their project's native
+# attachments store; the swarm reads them from the mirrored ``uploads/`` in
+# the workspace, and the Project Files browser + export carry them alongside
+# the generated deliverable. Uploads and deletes are OWNER-ONLY (demo boards
+# are public showcase and stay read-only for files); browsing mirrors the
+# workspace read rules (owned = owner, demo = any authenticated user).
+
+
+@app.post("/api/projects/{slug}/attachments")
+async def api_upload_attachment(slug: str, request: Request, file: UploadFile = File(...),
+                                user: dict = Depends(get_current_user)):
+    if not slug.startswith(f"u{user['id']}-"):
+        audit.audit("project.attach", uid=user["id"], email=user["email"],
+                    ip=_client_ip(request), outcome="fail", reason="unauthorized", slug=slug)
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file")
+    try:
+        info = hc.save_attachment(slug, file.filename or "upload.bin", data)
+    except ValueError as e:
+        audit.audit("project.attach", uid=user["id"], email=user["email"],
+                    ip=_client_ip(request), outcome="fail", reason=str(e)[:120], slug=slug)
+        raise HTTPException(status_code=400, detail=str(e))
+    audit.audit("project.attach", uid=user["id"], email=user["email"],
+                ip=_client_ip(request), outcome="ok", slug=slug,
+                name=info["name"], bytes_=info["size"])
+    return {"slug": slug, "name": info["name"], "size": info["size"]}
+
+
+@app.get("/api/projects/{slug}/files")
+def api_project_files(slug: str, user: dict = Depends(get_current_user)):
+    if not slug.startswith(f"u{user['id']}-") and not slug.startswith("flux-demo-"):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    try:
+        return {"slug": slug, **hc.list_project_files(slug)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to list project files")
+
+
+@app.delete("/api/projects/{slug}/attachments/{name}")
+def api_delete_attachment(slug: str, name: str, request: Request,
+                          user: dict = Depends(get_current_user)):
+    if not slug.startswith(f"u{user['id']}-"):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    try:
+        removed = hc.delete_project_file(slug, name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    audit.audit("project.attach_rm", uid=user["id"], email=user["email"],
+                ip=_client_ip(request), outcome="ok" if removed else "noop",
+                slug=slug, name=name)
+    return {"removed": removed}
+
+
 # ---------- paid-export gating: GET /api/projects/{slug}/export ----------
 # Generated project files are the user's deliverable; this endpoint bundles the
 # workspace into a ZIP, server-side gated by a per-user hourly burst cap
@@ -3050,6 +3162,47 @@ def api_dispatch(slug: str, dry_run: bool = False, user: dict = Depends(get_curr
         return hc.dispatch(slug, max_spawn=db.PLANS[user["plan"]]["parallel"], dry_run=dry_run, timeout_s=hc.DISPATCH_TIMEOUT_S)
     except Exception:
         raise HTTPException(status_code=500, detail="Dispatch failed")
+
+
+# ---------- edit-after-build: POST /api/projects/{slug}/reopen ----------
+# A sealed / finalized board is operator-final: the customer cannot make the
+# swarm work on it again until it is reopened. ``reopen`` unmounts the seal
+# marker and re-arms the parked agent lanes, so the flow becomes:
+# upload/edit (Project Files) -> reopen -> dispatch (rebuild against the new
+# files). Refunded boards stay closed forever (the credit was already returned).
+
+
+@app.post("/api/projects/{slug}/reopen")
+def api_reopen_project(slug: str, request: Request,
+                       user: dict = Depends(get_current_user)):
+    if not slug.startswith(f"u{user['id']}-"):
+        audit.audit("project.reopen", uid=user["id"], email=user["email"],
+                    ip=_client_ip(request), outcome="fail", reason="unauthorized", slug=slug)
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    # A refunded launch is permanent: its credit was returned, re-opening would
+    # let the same paid work run again for free.
+    proj = _project_by_board_slug(slug)
+    if proj and proj.get("launch_refunded"):
+        audit.audit("project.reopen", uid=user["id"], email=user["email"],
+                    ip=_client_ip(request), outcome="fail", reason="refunded", slug=slug)
+        raise HTTPException(status_code=409, detail="Refunded launch cannot be reopened")
+    try:
+        report = hc.unseal_board(slug, reason="customer-requested reopen")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to reopen board")
+    # Lift the launch-terminal marker so dispatch stops treating the board as
+    # finalized (never touches the refund flag — refused above).
+    if proj:
+        try:
+            db.set_launch_outcome(proj["id"], "reopened", "reopened")
+        except Exception:
+            pass
+    audit.audit("project.reopen", uid=user["id"], email=user["email"],
+                ip=_client_ip(request), outcome="ok", slug=slug,
+                rearmed=report.get("rearmed", 0))
+    return {"slug": slug, "reopened": True, "rearmed": report.get("rearmed", 0)}
 
 
 # ---------- BYOK keys ----------

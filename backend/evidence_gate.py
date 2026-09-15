@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import ast
 import os
+import re
 from pathlib import Path
 
 
@@ -171,6 +172,42 @@ def collect_evidence(workspace: str, goal: str = "") -> dict:
         else:
             checks.append({"name": "web_qa", "status": "warn",
                             "detail": f"{_WEB_FILE} not present (non-web goal?)"})
+
+    # --- 5.5 multi-file build sanity (informational for complex goals) ------
+    # A complex builder pack ships extra files (pages/, css/, js/, src/, …).
+    # Check that referenced relative href/src targets inside the page actually
+    # exist in the workspace and that a web goal's pack is not a broken stub.
+    # Informational: never fails the gate on its own, but flags a dangling
+    # multi-file structure so the Auditor/human sees it.
+    extra_files = sorted(
+        str(p.relative_to(root)).replace("\\", "/")
+        for p in root.rglob("*")
+        if p.is_file() and str(p.relative_to(root)) not in (
+            _WEB_FILE, *_REQUIRED_ARTIFACTS, "EVIDENCE.md")
+    )
+    if extra_files:
+        referenced = set()
+        for p in root.rglob(_WEB_FILE):
+            try:
+                html = p.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                html = ""
+            referenced |= set(re.findall(r'(?:href|src)\s*=\s*["\']([^"\'#?]+)', html))
+        dangling = sorted(
+            ref for ref in referenced
+            if not ref.startswith(("http://", "https://", "mailto:", "tel:"))
+            and not (root / ref).is_file())
+        if dangling:
+            checks.append({"name": "multi_file_links", "status": "warn",
+                            "detail": f"{len(dangling)} dangling relative reference(s): "
+                                      f"{', '.join(dangling[:5])}"})
+        else:
+            checks.append({"name": "multi_file_links", "status": "pass",
+                            "detail": f"{len(extra_files)} extra workspace file(s), "
+                                      "all relative references resolve"})
+    else:
+        checks.append({"name": "multi_file_links", "status": "info",
+                        "detail": "single-file deliverable (no extra workspace files)"})
 
     # --- Verdict ---
     fail_names = {c["name"] for c in checks if c["status"] == "fail"}

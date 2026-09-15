@@ -28,6 +28,12 @@ _COMPLETION_TIMEOUT_S = int(os.environ.get("FLUXSWARM_DEMO_LLM_TIMEOUT_S", "300"
 # system + real copy. 8000 tokens ≈ a complete styled page with palette, cards,
 # buttons and shapes. Operators cap it per-env.
 _BUILDER_MAX_TOKENS = int(os.environ.get("FLUXSWARM_BUILDER_MAX_TOKENS", "8000"))
+# Complex multi-file builds (multi-page sites, API+frontend, …) get headroom
+# above the single-file budget so the Builder can ship several COMPLETE files
+# in one pass.  Ceiled at a safe default (see below) so an 8k base can't be
+# blown past a model's output cap by an aggressive operator setting.
+_COMPLEX_EXTRA_TOKENS = int(os.environ.get("FLUXSWARM_COMPLEX_BUILDER_EXTRA_TOKENS", "4000"))
+_COMPLEX_MAX_TOKENS = int(os.environ.get("FLUXSWARM_COMPLEX_BUILDER_MAX_TOKENS", "12000"))
 # Generic (non-web) build deliverables (app.py, README.md, …) get an upgraded
 # dedicated budget so real project code comes back COMPLETE, not truncated.
 # The short plan/arch/devops/tdd/review lanes keep the lean default.
@@ -217,10 +223,59 @@ def _is_web_objective(objective: str) -> bool:
     return False
 
 
+def complex_objective(objective: str) -> bool:
+    """Detect if a goal implies a multi-file or multi-module project
+    (multi-page sites, API/backend+frontend, auth, databases, payments, …).
+
+    Deliberately conservative: weak catch-all substrings (\"a website with\")
+    are NOT enough on their own — the word must be a concrete complexity
+    feature (pages beyond the landing one, an API, a database, auth, …).
+    """
+    lower = (objective or "").lower()
+    if not lower:
+        return False
+    # Strong single-term features that almost always force more than one file.
+    strong_terms = (
+        "multi-page", "multipage", "multi page",
+        "login", "signup", "sign up", "registration", "authentication",
+        "database", "postgresql", "postgres", "mysql", "sqlite", "redis",
+        "payments", "payment gateway", "stripe", "checkout",
+        "rest api", "restful api", "graphql", "grpc", "websocket",
+        "api +", "+ api", " api ", "backend", "frontend +", "+ frontend",
+        "microservice", "micro-services", "docker compose", "kubernetes",
+        "realtime", "real-time",
+    )
+    if any(t in lower for t in strong_terms):
+        return True
+    # Admin/dashboard/portal goals are big enough to split into multiple files.
+    portal_terms = (
+        "admin panel", "admin dashboard", "management dashboard",
+        "portal", "cms", "crm", "saas platform", "multi-tenant",
+    )
+    if any(t in lower for t in portal_terms):
+        return True
+    # \"X with a/some Y\" structures where Y is a concrete big module.
+    with_terms = (
+        "with an admin", "with admin", "with a dashboard", "with dashboard",
+        "with a database", "with database", "with a payment", "with payments",
+        "with authentication", "with auth", "with a login", "with login",
+        "with user accounts", "with an api", "with api", "with a backend",
+        "with backend", "with a frontend", "with frontend",
+        "with multiple pages", "with several pages", "with a blog",
+        "with a forum", "with a marketplace", "with a chat",
+    )
+    if any(t in lower for t in with_terms):
+        return True
+    return False
+
+
 def builder_max_tokens(objective: str = "") -> int:
     """Output-budget for the final deliverable lane (what /p/ renders live)."""
+    base = _BUILDER_MAX_TOKENS
+    if complex_objective(objective):
+        return min(_COMPLEX_MAX_TOKENS, base + _COMPLEX_EXTRA_TOKENS)
     if not objective or _is_web_objective(objective) or "html" in (objective or "").lower():
-        return _BUILDER_MAX_TOKENS
+        return base
     return _DELIVERABLE_MAX_TOKENS
 
 
@@ -321,11 +376,31 @@ def builder_prompt(task_title: str, objective: str, plan: str,
                    repair: bool = False, qa: list[str] | None = None,
                    design_spec: str = "",
                    codebase_ctx: str = "") -> str:
-    if _is_web_objective(objective):
+    web = _is_web_objective(objective)
+    complex = complex_objective(objective)
+    if web:
         deliverable = (
             "The objective is a WEBSITE / WEB APP — produce ONE self-contained "
             "index.html that is GENUINELY EXCELLENT:\n" + _WEB_BUILD_SPEC
         )
+        if complex:
+            deliverable += (
+                "\nThe objective is COMPLEX: even though index.html must stay the "
+                "complete self-contained ENTRY page that renders live in /p/, also "
+                "emit the additional pages/ assets as EXTRA FILES so the site has "
+                "real structure. " + multi_file_protocol().strip() +
+                "  Concrete guidance for a complex web goal:\n"
+                "    - index.html = the full designed HOME page (exactly the "
+                "_WEB_BUILD_SPEC above, complete with </html>).\n"
+                "    - Extra files: pages/about.html, pages/services.html, "
+                "pages/contact.html, pages/menu.html (restaurant), "
+                "css/app.css, js/app.js, etc.\n"
+                "    - index.html nav links to those pages with RELATIVE hrefs "
+                "(pages/about.html); each extra page carries its own complete "
+                "HTML document, shares the same design tokens and links BACK to "
+                "index.html.  Never split the home/entry page across files — "
+                "index.html alone must be a finished page."
+            )
     else:
         deliverable = (
             "Produce the SINGLE final deliverable file that achieves the "
@@ -334,6 +409,20 @@ def builder_prompt(task_title: str, objective: str, plan: str,
             "that; otherwise write the concise code/document file that "
             "fulfills the objective. Never truncate or half-finish output."
         )
+        if complex:
+            deliverable += (
+                "\nThe objective is COMPLEX: emit the main entry file first and "
+                "the supporting modules/ files as EXTRA FILES so the project has "
+                "real structure. " + multi_file_protocol().strip() +
+                "  Concrete guidance for a complex code goal:\n"
+                "    - The PRIMARY file (the artifact name above) is the app "
+                "entry point / main module, complete and runnable.\n"
+                "    - Extra files: modules, constants, routes/views, database "
+                "schema, a requirements.txt / package.json, README, etc.\n"
+                "    - Each extra module is complete, imports the right neighbors "
+                "and can be imported cleanly.  Never leave a marker file as a "
+                "stub or half-finished."
+            )
     if repair:
         if qa:
             bullets = "\n".join(f"  - {i}" for i in qa[:12])
@@ -758,6 +847,99 @@ def deliverable_filename(objective: str) -> str:
     if "html" in lower or _is_web_objective(objective):
         return "index.html"
     return "deliverable.md"
+
+
+# --- multi-file build protocol --------------------------------
+# A complex objective (multi-page site, API+frontend, …) cannot live in a
+# single self-contained file.  The Builder emits a "file pack": its primary
+# file first (still index.html for web — /p/ renders that as the live page),
+# then optional extra files delimited by a marker line:
+#
+#     ==== FILE: pages/about.html
+#     <content…>
+#
+# The driver (main._run_builder) splits the pack on these markers and writes
+# each extra file into the build workspace, where the preview, export zip and
+# Project Files browser already pick it up.  The marker format is deliberately
+# simple, whitespace-tolerant and easy for a completion to emit exactly.
+_MULTI_FILE_MARKER = re.compile(r"^====\s*FILE[: ]+\s*(\S+)\s*$", re.MULTILINE)
+
+
+def multi_file_protocol() -> str:
+    """Prompt block that teaches the Builder the multi-file pack format."""
+    return (
+        "The objective is COMPLEX: it calls for more than one file.  Emit a "
+        "\"file pack\" so the project ships real structure:\n"
+        "  1. Write the PRIMARY file first, full and complete (whatever the "
+        "deliverable file name given above is — the live page for a web goal, "
+        "the app entry module for a code goal).\n"
+        "  2. For every extra file, put a marker line exactly like this BEFORE "
+        "its content:\n"
+        "     ==== FILE: <relative path>\n"
+        "     where <relative path> is a clean filesystem-safe name like "
+        "pages/about.html, css/app.css, js/app.js, src/models.ts, "
+        "src/routes.ts or requirements.txt.  No \"..\", no absolute paths, no "
+        "quotes in the path.\n"
+        "  Keep CSS in css/, shared scripts in js/, page fragments/pages in "
+        "their own files, and any backend module files in src/ or top-level "
+        "modules.  When the primary file is a web page, reference the extra "
+        "files with RELATIVE URLs (css/app.css, js/app.js) so the preview "
+        "serves them.  Every marker file gets COMPLETE, non-truncated content, "
+        "and content from a marker starts on the line right after it.\n"
+    )
+
+
+def split_artifact(text: str) -> dict[str, str]:
+    """Split a Builder "file pack" into {relative_path: content}.
+
+    The text before the first marker is the primary file content (kept under
+    the caller's chosen artifact name).  Every later marker line starts a new
+    file whose path must parse cleanly (no traversal, no absolute paths, no
+    empty/duplicate/conflicting names).  Unsafe or duplicate file names are
+    collected under a ``_skipped`` key with all later content folded into it so
+    the caller can log them instead of silently losing data.
+    """
+    if not text or not re.search(_MULTI_FILE_MARKER, text):
+        return {"": text or ""}
+    lines = text.splitlines()
+    files: dict[str, list[str]] = {}
+    order: list[str] = []
+    current = ""
+    order.append(current)
+    files[current] = []
+    for ln in lines:
+        m = _MULTI_FILE_MARKER.match(ln.strip())
+        if m:
+            path = m.group(1).strip().strip('"')
+            if path and _is_safe_relpath(path) and path not in files and path != "":
+                current = path
+                order.append(path)
+                files[path] = []
+            else:
+                # unsafe/duplicate marker: stop folding, drop the marker line
+                # itself and park the rest of the pack in _skipped.
+                current = "_skipped"
+                order.append(current)
+                files[current] = []
+            continue
+        files[current].append(ln)
+    result: dict[str, str] = {}
+    for path in order:
+        if path not in result:
+            result[path] = "\n".join(files[path]).strip("\n")
+    return result
+
+
+def _is_safe_relpath(path: str) -> bool:
+    """A relative path is usable when it has no traversal, isn't absolute,
+    isn't empty and only uses usual filesystem-safe characters."""
+    if not path or path.startswith("/") or path.startswith("\\"):
+        return False
+    if re.search(r'[\\/]\.\.([\\/]|$)', path) or path == "..":
+        return False
+    if re.search(r'[:*?"<>|\x00-\x1f]', path):
+        return False
+    return True
 
 
 def architect_prompt(task_title: str, objective: str, codebase_ctx: str = "") -> str:

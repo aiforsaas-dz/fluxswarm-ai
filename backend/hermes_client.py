@@ -807,6 +807,183 @@ def project_workspace_dir(board: str) -> Path:
     return Path(HERMES_HOME) / "kanban" / "boards" / board / "workspaces"
 
 
+# ---- Project Files: customer uploads + the edit-after-build loop ----------
+# A customer uploads files/images into their board's native ``attachments``
+# store; each file is ALSO mirrored into the project workspace (``uploads/``)
+# so the swarm can read it, the preview can render it, and the export bundles
+# it with the generated deliverable. Everything is validated before touching
+# the filesystem: slug and filename are both strict-charset checked and the
+# resolved paths stay inside the board dir.
+_ATTACH_MAX_BYTES = int(os.environ.get("FLUXSWARM_ATTACH_MAX_BYTES", str(50 * 1024 * 1024)))
+_ATTACH_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,159}$")
+
+
+def project_attachments_dir(board: str) -> Path:
+    """The per-board native attachments root (``<board>/attachments``)."""
+    if not _SAFE_SLUG_RE.match(board):
+        raise ValueError(f"unsafe board slug: {board!r}")
+    return Path(HERMES_HOME) / "kanban" / "boards" / board / "attachments"
+
+
+def _safe_attachment_name(name: str) -> str:
+    """Normalize an uploaded filename to a path-safe basename or raise."""
+    base = Path(name or "").name  # strip any path components first
+    if not base or len(base) > 160 or not _ATTACH_NAME_RE.match(base):
+        raise ValueError(f"unsafe attachment name: {name!r}")
+    return base
+
+
+def save_attachment(board: str, filename: str, data: bytes) -> dict:
+    """Persist one customer-uploaded file for *board*.
+
+    Writes into the board's native ``attachments`` store and mirrors a copy
+    into ``workspaces/uploads/`` so the swarm, preview and export all see it.
+    Raises ValueError on unsafe slug/name, empty payload, or size-cap breach.
+    """
+    if not _SAFE_SLUG_RE.match(board):
+        raise ValueError(f"unsafe board slug: {board!r}")
+    name = _safe_attachment_name(filename)
+    if not data:
+        raise ValueError("empty upload")
+    if len(data) > _ATTACH_MAX_BYTES:
+        raise ValueError("attachment exceeds the size cap")
+    root = project_attachments_dir(board)
+    root.mkdir(parents=True, exist_ok=True)
+    (root / name).write_bytes(data)
+    ws = project_workspace_dir(board)
+    try:
+        (ws / "uploads").mkdir(parents=True, exist_ok=True)
+        (ws / "uploads" / name).write_bytes(data)
+    except OSError:  # pragma: no cover - defensive
+        pass
+    return {"name": name, "size": len(data)}
+
+
+def list_project_files(board: str) -> dict:
+    """Project Files browser: the attachment store + the generated workspace
+    tree (name, size, mtime). Best-effort and never raises."""
+    if not _SAFE_SLUG_RE.match(board):
+        raise ValueError(f"unsafe board slug: {board!r}")
+    att = project_attachments_dir(board)
+    ws = project_workspace_dir(board)
+    out: dict = {"attachments": [], "workspace": []}
+    for root, key in ((att, "attachments"), (ws, "workspace")):
+        try:
+            if not root.is_dir():
+                continue
+            for p in sorted(root.rglob("*")):
+                if not p.is_file():
+                    continue
+                st = p.stat()
+                out[key].append({
+                    "name": str(p.relative_to(root)).replace("\\", "/"),
+                    "size": st.st_size,
+                    "mtime": st.st_mtime,
+                })
+        except OSError:
+            continue
+        except Exception:
+            continue
+    return out
+
+
+def delete_project_file(board: str, name: str) -> bool:
+    """Remove one customer-uploaded file (both copies). Returns True when at
+    least one copy was removed."""
+    if not _SAFE_SLUG_RE.match(board):
+        raise ValueError(f"unsafe board slug: {board!r}")
+    safe = _safe_attachment_name(name)
+    removed = False
+    try:
+        p = project_attachments_dir(board) / safe
+        if p.exists():
+            p.unlink()
+            removed = True
+    except OSError:
+        pass
+    try:
+        p = project_workspace_dir(board) / "uploads" / safe
+        if p.exists():
+            p.unlink()
+            removed = True
+    except OSError:
+        pass
+    return removed
+
+
+def unseal_board(board: str, reason: str = "reopened for edits") -> dict:
+    """Reopen an operator-sealed board so the customer can edit it and
+    re-dispatch (the edit-after-build loop).
+
+    Drops the ``board.sealed`` marker and re-arms every agent lane that was
+    parked by the seal (done/blocked -> ready) so a re-dispatch rebuilds the
+    project against the updated workspace. Best-effort and idempotent: per-row
+    failures degrade the report and never raise; task-state recovery is
+    column-tolerant (only touches columns this board's schema actually has).
+    """
+    if not _SAFE_SLUG_RE.match(board):
+        raise ValueError(f"unsafe board slug: {board!r}")
+    report: dict = {"marker": False, "rearmed": 0, "errors": []}
+    board_dir = Path(HERMES_HOME) / "kanban" / "boards" / board
+    marker = board_dir / SEAL_MARKER_NAME
+    try:
+        if marker.exists():
+            marker.unlink()
+            report["marker"] = True
+    except OSError as exc:
+        report["errors"].append(f"marker: {exc}")
+    db_path = board_dir / "kanban.db"
+    if db_path.exists():
+        try:
+            c = sqlite3.connect(str(db_path), timeout=5.0)
+            try:
+                cols = {r[1] for r in c.execute("PRAGMA table_info(tasks)")}
+                clauses = ["status='ready'"]
+                for col in ("worker_pid", "claim_lock", "claim_expires"):
+                    if col in cols:
+                        clauses.append(f"{col}=NULL")
+                cur = c.execute(
+                    "UPDATE tasks SET %s WHERE status IN ('done','blocked') "
+                    "AND assignee != 'fluxswarm'" % ", ".join(clauses))
+                report["rearmed"] = cur.rowcount
+                c.commit()
+            finally:
+                c.close()
+        except sqlite3.Error as exc:
+            report["errors"].append(f"db: {exc}")
+    try:
+        board_store.snapshot_board(board)
+    except Exception:
+        pass
+    return report
+
+
+def _seed_attachments_into_workspace(board: str, ws: Path) -> None:
+    """Copy the board's native attachments into the seeded workspace and note
+    them in TASK.md so every fresh(e) launch surfaces the uploads. Best-effort."""
+    try:
+        src = project_attachments_dir(board)
+        if not src.is_dir():
+            return
+        (ws / "uploads").mkdir(parents=True, exist_ok=True)
+        names: list[str] = []
+        for p in sorted(src.iterdir()):
+            if p.is_file():
+                try:
+                    shutil.copy2(p, ws / "uploads" / p.name)
+                    names.append(p.name)
+                except OSError:
+                    pass
+        if names and (ws / "TASK.md").exists():
+            with (ws / "TASK.md").open("a", encoding="utf-8") as fh:
+                fh.write("\n\nUSER UPLOADS (available under uploads/):\n- "
+                         + "\n- ".join(names) + "\n")
+    except OSError:
+        pass
+    except Exception:
+        pass
+
+
 def _seed_project_workspace(ws: Path, goal: str) -> None:
     ws.mkdir(parents=True, exist_ok=True)
     (ws / "TASK.md").write_text(
@@ -859,6 +1036,7 @@ def launch_project_thin(board: str, goal: str, provider: Optional[str] = None,
     """
     ws = project_workspace_dir(board)
     _seed_project_workspace(ws, goal)
+    _seed_attachments_into_workspace(board, ws)
     _ensure_board_db(board)
     lanes = _thin_project_lanes()
     ids: list[str] = []
