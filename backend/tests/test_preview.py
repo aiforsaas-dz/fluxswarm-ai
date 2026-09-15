@@ -196,6 +196,7 @@ def test_flag_set_only_on_preview_routes(_host):
     # the ticket endpoint itself is a regular API response (strict headers)
     user = _register("preview-ticket-hdr@fluxswarm.test")
     slug2 = f"u{user['user']['id']}-hdr"
+    _ws(_host, slug2, "index.html").write_text("<h1>h</h1>", encoding="utf-8")
     rt = client.get(f"/api/projects/{slug2}/preview-ticket",
                     headers={"Authorization": f"Bearer {user['token']}"})
     assert rt.status_code == 200

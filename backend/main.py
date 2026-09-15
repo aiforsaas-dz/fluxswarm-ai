@@ -288,6 +288,13 @@ _DEMO_IP_MAX = 1
 _DEMO_IP_WINDOW = 3600
 _DEMO_GLOBAL_MAX = 20
 _DEMO_GLOBAL_WINDOW = 86400
+# Phase 2: ``POST /api/projects/{slug}/dispatch`` on shared flux-demo-* boards
+# is a cost-bearing surface distinct from /api/demo/launch, so it carries its
+# OWN sliding-window bounds (per-IP + global) on top of the per-user daily cap —
+# otherwise a set of authenticated users could jointly exhaust the operator's
+# shared demo pool while each stayed under their own 25/day.
+_DEMO_DISPATCH_IP_MAX = int(os.environ.get("FLUXSWARM_DEMO_DISPATCH_IP_MAX", "10"))
+_DEMO_DISPATCH_GLOBAL_MAX = int(os.environ.get("FLUXSWARM_DEMO_DISPATCH_GLOBAL_MAX", "50"))
 _DEMO_MICRO_IP_MAX = 5
 _DEMO_MICRO_GLOBAL_MAX = 200
 # Session 3 demo lifecycle (auto-close + workspace recycle).
@@ -356,6 +363,26 @@ _DEMO_LIMIT_DETAILS = {
         "error": "demo_global_limit",
         "message": {
             "en": "Daily demo quota exhausted. Try tomorrow or sign up.",
+        },
+        "retry_after_seconds": _DEMO_GLOBAL_WINDOW,
+        "upgrade_url": "/pricing",
+    },
+}
+
+# Phase 2: 429 bodies for the separate demo-board dispatch windows.
+_DEMO_DISPATCH_LIMIT_DETAILS = {
+    "ip": {
+        "error": "demo_dispatch_ip_limit",
+        "message": {
+            "en": "Demo dispatch limit reached — try again in about an hour.",
+        },
+        "retry_after_seconds": _DEMO_IP_WINDOW,
+        "upgrade_url": "/pricing",
+    },
+    "global": {
+        "error": "demo_dispatch_global_limit",
+        "message": {
+            "en": "Daily demo dispatch quota exhausted. Try tomorrow or sign up.",
         },
         "retry_after_seconds": _DEMO_GLOBAL_WINDOW,
         "upgrade_url": "/pricing",
@@ -1226,6 +1253,18 @@ def _project_by_board_slug(slug: str) -> dict | None:
             c.close()
     except Exception:
         return None
+
+
+def _board_exists(slug: str) -> bool:
+    """True when *slug* names a real board: an on-disk workspace, or a projects
+    row. Callers run this AFTER the ownership guard, so a genuinely invalid
+    owned slug turns into a controlled 404 instead of a 500 from the store."""
+    try:
+        if hc.project_workspace_dir(slug).is_dir():
+            return True
+    except Exception:
+        pass
+    return _project_by_board_slug(slug) is not None
 
 
 def _board_finalized(slug: str) -> bool:
@@ -2510,6 +2549,33 @@ def make_project_slug(user_id: int) -> str:
     return f"u{user_id}-{int(time.time())}-{secrets.token_hex(4)}"
 
 
+_COOKIE_SESSION_NAME = "fs_token"
+
+
+def _cookie_secure() -> bool:
+    """HTTPS-only session cookie outside demo/dev mode (Render serves TLS)."""
+    demo = os.environ.get("FLUXSWARM_DEMO_MODE", "").strip().lower()
+    if demo in ("1", "true", "yes"):
+        return False
+    return os.environ.get("FLUXSWARM_COOKIE_SECURE", "1") != "0"
+
+
+def _set_auth_cookie(resp: Response, token: str) -> None:
+    """Persist the user's session in an HttpOnly, SameSite=Lax cookie so the SPA
+    stays signed in across refresh / new tab (the Bearer token lives in a page
+    JS variable and is lost on navigation). The cookie name matches the existing
+    ``fs_token`` fallback read in ``get_current_user``. SameSite=Lax keeps the
+    cookie off cross-site subrequests, so cookie auth never rides along on a
+    cross-site POST/DELETE; the SPA still uses the Bearer header for mutations.
+    """
+    resp.set_cookie(_COOKIE_SESSION_NAME, token, max_age=auth_mod.EXP_SECONDS,
+                    httponly=True, samesite="lax", secure=_cookie_secure(), path="/")
+
+
+def _clear_auth_cookie(resp: Response) -> None:
+    resp.delete_cookie(_COOKIE_SESSION_NAME, path="/")
+
+
 @app.post("/api/auth/register")
 def api_register(p: RegisterIn, request: Request):
     ip = _client_ip(request)
@@ -2539,7 +2605,9 @@ def api_register(p: RegisterIn, request: Request):
     token = auth_mod.make_token(user)
     audit.audit("auth.register", uid=user["id"], email=user["email"], ip=ip, outcome="ok")
     notify.send_welcome_async(user["email"], user["name"])
-    return {"token": token, "user": public_user(user)}
+    resp = JSONResponse({"token": token, "user": public_user(user)})
+    _set_auth_cookie(resp, token)
+    return resp
 
 
 @app.post("/api/auth/login")
@@ -2560,7 +2628,9 @@ def api_login(p: LoginIn, request: Request):
     limiter.clear_login_failures(ip, user["email"])
     token = auth_mod.make_token(user)
     audit.audit("auth.login", uid=user["id"], email=user["email"], ip=ip, outcome="ok")
-    return {"token": token, "user": public_user(user)}
+    resp = JSONResponse({"token": token, "user": public_user(user)})
+    _set_auth_cookie(resp, token)
+    return resp
 
 
 @app.get("/api/me")
@@ -2609,7 +2679,9 @@ def api_logout(request: Request, user: dict = Depends(get_current_user)):
     db.mark_logged_out(user["id"])
     audit.audit("auth.logout", uid=user["id"], email=user["email"],
                 ip=_client_ip(request), outcome="ok")
-    return {"ok": True, "note": "Logged out — remove the token from your browser"}
+    resp = JSONResponse({"ok": True, "note": "Logged out — remove the token from your browser"})
+    _clear_auth_cookie(resp)
+    return resp
 
 
 @app.post("/api/auth/password")
@@ -2626,7 +2698,9 @@ def api_change_password(p: PasswordChangeIn, request: Request,
     db.set_password(user["id"], p.new)
     audit.audit("auth.password", uid=user["id"], email=user["email"],
                 ip=_client_ip(request), outcome="ok")
-    return {"ok": True, "note": "Password changed — logged out of all sessions"}
+    resp = JSONResponse({"ok": True, "note": "Password changed — logged out of all sessions"})
+    _clear_auth_cookie(resp)
+    return resp
 
 
 def _reset_self_service() -> bool:
@@ -2677,7 +2751,9 @@ def api_reset(p: ResetIn, request: Request):
     u = db.get_user_by_id(uid)
     audit.audit("auth.reset", uid=uid, email=(u or {}).get("email", ""),
                 ip=_client_ip(request), outcome="ok")
-    return {"ok": True, "note": "Password reset — please log in again"}
+    resp = JSONResponse({"ok": True, "note": "Password reset — please log in again"})
+    _clear_auth_cookie(resp)
+    return resp
 
 
 def public_user(u: dict) -> dict:
@@ -2886,6 +2962,8 @@ def api_workspace(slug: str, user: dict = Depends(get_current_user)):
     # demo boards are public showcase. Generated files are the user's "result".
     if not slug.startswith(f"u{user['id']}-") and not slug.startswith("flux-demo-"):
         raise HTTPException(status_code=403, detail="Unauthorized")
+    if not slug.startswith("flux-demo-") and not _board_exists(slug):
+        raise HTTPException(status_code=404, detail="Project not found")
     try:
         return {"slug": slug, "content": hc.read_workspace(slug)}
     except Exception:
@@ -2927,6 +3005,8 @@ async def api_upload_attachment(slug: str, request: Request, file: UploadFile = 
 def api_project_files(slug: str, user: dict = Depends(get_current_user)):
     if not slug.startswith(f"u{user['id']}-") and not slug.startswith("flux-demo-"):
         raise HTTPException(status_code=403, detail="Unauthorized")
+    if not slug.startswith("flux-demo-") and not _board_exists(slug):
+        raise HTTPException(status_code=404, detail="Project not found")
     try:
         return {"slug": slug, **hc.list_project_files(slug)}
     except ValueError as e:
@@ -3235,6 +3315,8 @@ def api_preview_ticket(slug: str, request: Request,
     with an iframe navigation). Demo boards need no ticket."""
     if not slug.startswith(f"u{user['id']}-"):
         raise HTTPException(status_code=403, detail="Unauthorized")
+    if not _board_exists(slug):
+        raise HTTPException(status_code=404, detail="Project not found")
     ticket = _issue_preview_ticket(slug, user["id"])
     audit.audit("preview.ticket", uid=user["id"], slug=slug,
                 ip=_client_ip(request), outcome="ok")
@@ -3249,6 +3331,8 @@ def api_tasks(slug: str, user: dict = Depends(get_current_user)):
     # Only allow if the board belongs to this user (prefix guard).
     if not slug.startswith(f"u{user['id']}-") and not slug.startswith("flux-demo-"):
         raise HTTPException(status_code=403, detail="Unauthorized")
+    if not slug.startswith("flux-demo-") and not _board_exists(slug):
+        raise HTTPException(status_code=404, detail="Project not found")
     try:
         return hc.list_tasks(slug)
     except Exception:
@@ -3256,24 +3340,50 @@ def api_tasks(slug: str, user: dict = Depends(get_current_user)):
 
 
 @app.post("/api/projects/{slug}/dispatch")
-def api_dispatch(slug: str, dry_run: bool = False, user: dict = Depends(get_current_user)):
+def api_dispatch(slug: str, request: Request, dry_run: bool = False,
+                 user: dict = Depends(get_current_user)):
     if not slug.startswith(f"u{user['id']}-") and not slug.startswith("flux-demo-"):
         raise HTTPException(status_code=403, detail="Unauthorized")
+    if not slug.startswith("flux-demo-") and not _board_exists(slug):
+        raise HTTPException(status_code=404, detail="Project not found")
     if _operator_maintenance():
         raise HTTPException(status_code=503, detail="Service temporarily unavailable — please try again later")
     # CCPA/CPRA ADMT opt-out: the user forfeits AI-assisted dispatch.
     if db.get_admt_opt_out(user["id"]):
         raise HTTPException(status_code=403,
                             detail="ADMT opt-out active. Human review required.")
-    if slug.startswith("flux-demo-") and db.bump_demo_usage(f"u{user['id']}", _today()) > _DEMO_DAILY_CAP:
+    # Fail-closed operator budget gate (Phase 2): dispatch runs the agent team
+    # and spends provider capacity exactly like a launch, so it must respect the
+    # same configured ceilings — BEFORE any quota/usage counter is bumped, so a
+    # refused dispatch never burns the user's allowance.
+    budget = provider_guard.budget_gate()
+    if not budget.ok:
+        audit.audit("project.dispatch", uid=user["id"], email=user["email"],
+                    ip=_client_ip(request), outcome="fail", reason=budget.reason, slug=slug)
         raise HTTPException(status_code=429, detail={
-            "error": "demo_daily_limit",
-            "message": {
-                "en": "Daily demo allowance used up. Sign up for unlimited access.",
-            },
-            "retry_after_seconds": 86400,
-            "upgrade_url": "/pricing",
+            "error": "budget_exhausted",
+            "message": {"en": "Agent launch capacity is temporarily exhausted — please try again later."},
+            "reason": budget.reason,
         })
+    if slug.startswith("flux-demo-"):
+        # Demo-board dispatch is bounded by its own per-IP + global windows in
+        # addition to the per-user daily cap (mirroring the /api/demo/launch
+        # surface), so aggregate shared-demo re-runs cannot drain the pool.
+        if not limiter.check(f"demo:dispatch:ip:{_client_ip(request)}",
+                             _DEMO_DISPATCH_IP_MAX, _DEMO_IP_WINDOW):
+            raise HTTPException(status_code=429, detail=_DEMO_DISPATCH_LIMIT_DETAILS["ip"])
+        if not limiter.check("demo:dispatch:global",
+                             _DEMO_DISPATCH_GLOBAL_MAX, _DEMO_GLOBAL_WINDOW):
+            raise HTTPException(status_code=429, detail=_DEMO_DISPATCH_LIMIT_DETAILS["global"])
+        if db.bump_demo_usage(f"u{user['id']}", _today()) > _DEMO_DAILY_CAP:
+            raise HTTPException(status_code=429, detail={
+                "error": "demo_daily_limit",
+                "message": {
+                    "en": "Daily demo allowance used up. Sign up for unlimited access.",
+                },
+                "retry_after_seconds": 86400,
+                "upgrade_url": "/pricing",
+            })
     # Never re-arm an operator-final board: a sealed / finalized launch must not
     # be re-dispatched (its workers are dead and it would hold the host-cap).
     if _board_finalized(slug) or hc.board_is_sealed(slug):
@@ -4512,8 +4622,11 @@ def api_account_delete(request: Request, user: dict = Depends(get_current_user))
             boards_deleted = -1  # DB already erased; disk cleanup stays best-effort
     audit.audit("account.delete", uid=uid, email=user["email"], ip=_client_ip(request),
                 outcome="ok" if removed else "missing", boards_deleted=boards_deleted)
-    return {"ok": removed, "note": "Account and all associated data have been deleted",
-            "boards_deleted": boards_deleted}
+    resp = JSONResponse({"ok": removed,
+                         "note": "Account and all associated data have been deleted",
+                         "boards_deleted": boards_deleted})
+    _clear_auth_cookie(resp)
+    return resp
 
 
 # ---------- Telegram account linking ----------
@@ -4768,6 +4881,8 @@ def api_security(slug: str, include_llm: bool = False, user: dict | None = Depen
         pass
     elif not (user and (slug.startswith(f"u{user['id']}-"))):
         raise HTTPException(status_code=403, detail="Unauthorized")
+    if not slug.startswith("flux-demo-") and not _board_exists(slug):
+        raise HTTPException(status_code=404, detail="Project not found")
     goal = ""
     try:
         goal = hc.list_tasks(slug)[0].get("title", "") if hc.list_tasks(slug) else ""

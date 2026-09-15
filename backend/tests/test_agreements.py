@@ -107,8 +107,9 @@ class TestAgreementApi:
         assert r3.status_code == 400  # unknown provider, no free tier
 
     def test_agreements_require_auth(self):
-        assert client.get("/api/agreements").status_code == 401
-        assert client.post("/api/agreements/anthropic").status_code == 401
+        fresh = TestClient(main_mod.app)  # no session cookie from prior registers
+        assert fresh.get("/api/agreements").status_code == 401
+        assert fresh.post("/api/agreements/anthropic").status_code == 401
 
 
 # ---------------------------------------------------------------------------

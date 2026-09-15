@@ -206,7 +206,9 @@ def _seal_board(slug: str) -> None:
 
 
 def test_reopen_requires_auth(_no_hermes):
-    r = client.post("/api/projects/u1-x/reopen")
+    # fresh client: no session cookie (register/login now set one)
+    fresh = TestClient(main_mod.app)
+    r = fresh.post("/api/projects/u1-x/reopen")
     assert r.status_code == 401
 
 

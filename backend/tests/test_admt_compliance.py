@@ -394,11 +394,12 @@ def test_opt_out_blocks_demo():
 def test_human_review_unauthorized():
     email, tok = _fresh_user()
     pid = _make_project(_uid(email))
-    r = client.post(f"/api/projects/{pid}/request-human-review")
+    fresh = TestClient(main_mod.app)  # no session cookie from prior registers
+    r = fresh.post(f"/api/projects/{pid}/request-human-review")
     assert r.status_code == 401, r.text
     r = client.post(f"/api/projects/{pid}/request-human-review", headers=_auth(tok))
     assert r.status_code == 200, r.text
-    r = client.get("/api/admin/human-review-queue")
+    r = fresh.get("/api/admin/human-review-queue")
     assert r.status_code == 401, r.text
 
 

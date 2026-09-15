@@ -43,7 +43,9 @@ def test_fix1_demo_daily_cap(monkeypatch):
     assert r.status_code == 429, r.text  # capped on the 4th
 
     # Own-board dispatch is NOT metered by the demo cap.
-    own = f"u{r1.json()['user']['id']}-own"
+    uid = r1.json()["user"]["id"]
+    own = f"u{uid}-own"
+    db_mod.add_project(uid, own, "own", "goal")
     r = client.post(f"/api/projects/{own}/dispatch",
                     headers={"Authorization": "Bearer " + tok})
     assert r.status_code == 200, r.text
