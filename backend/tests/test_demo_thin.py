@@ -49,11 +49,14 @@ def _styled_body(inner: str, brand: str = "Nebula") -> str:
 # buttons, nav/footer/h1, filled sections, closing </html>).
 def _polished_page(brand: str = "Nebula") -> str:
     return (
-        "<!doctype html><html lang='en'><head><title>" + brand + "</title></head>"
+        "<!doctype html><html lang='en'><head><meta name='viewport' "
+        "content='width=device-width, initial-scale=1'><title>" + brand +
+        "</title></head>"
         "<body id='top'><style>"
         ":root{--bg:#0b0f1a;--surface:#151b2b;--text:#eef1fb;--muted:#a7b0c8;"
         "--accent:#6366f1;--accent-2:#22d3ee;--border:#232a3b;--radius:14px;"
         "--shadow:0 8px 24px rgba(0,0,0,.25)}"
+        "@media(max-width:640px){section{padding:56px 16px}.cards{grid-template-columns:1fr}}"
         "body{background:var(--bg);color:var(--text);font-family:system-ui;"
         "margin:0;line-height:1.55}"
         "nav{position:sticky;top:0;padding:16px 24px;background:rgba(11,15,26,.8)}"
@@ -902,3 +905,73 @@ def test_run_builder_content_patch_fills_missing_sections(monkeypatch, tmp_path)
     final = (ws / "index.html").read_text(encoding="utf-8")
     assert "<section id='mains'" in final and "<section id='desserts'" in final
     assert demo_llm.web_content_gap(final) == []
+
+
+def test_web_qa_issue_flags_missing_viewport_lang_and_alt():
+    """artifact-review quality gate: a complete page lacking mobile viewport,
+    <html lang> or image alt text must be flagged — deterministically."""
+    bare = _styled_body(
+        "<nav><a href='#a'>A</a></nav>"
+        "<section id='a'><h1>Nebula</h1>"
+        + ("<p>" + "x" * 300 + "</p>") * 2 +
+        "<img src='data:image/png;base64,AAAA'>"
+        "</section><footer>N 2026 <button class='btn'>Go</button></footer>")
+    if '<meta name="viewport"' not in bare:
+        bare = bare.replace("<head>", "<head><meta name='viewport' "
+                            "content='width=device-width, initial-scale=1'>", 1)
+    joined = "\n".join(demo_llm.web_qa_issues(bare))
+    assert "image without alt attribute" in joined
+
+
+def test_device_meta_patch_adds_viewport_lang_and_responsive(monkeypatch, tmp_path):
+    """_device_meta_patch fixes viewport + lang + a responsive rule determinis-
+    tically — zero LLM calls, zero rebuild rounds for one-line head fixes."""
+    import main as main_mod
+
+    monkeypatch.setattr(main_mod.hc, "HERMES_HOME", str(tmp_path))
+    ws = tmp_path / "wsD"
+    ws.mkdir()
+    (ws / "index.html").write_text(
+        _styled_body(
+            "<nav><a href='#a'>A</a></nav>"
+            "<section id='a'><h1>Nebula</h1>"
+            + ("<p>" + "x" * 300 + "</p>") * 2 +
+            "</section><footer>N 2026 <button class='btn'>Go</button></footer>"),
+        encoding="utf-8")
+
+    assert main_mod._device_meta_patch(workspace=str(ws)) is True
+    final = (ws / "index.html").read_text(encoding="utf-8")
+    assert "name=\"viewport\"" in final or "name='viewport'" in final
+    assert "lang=\"en\"" in final or "lang='en'" in final
+    issues = demo_llm.web_qa_issues(final)
+    assert not any(i.startswith(("no viewport meta tag", "no lang attribute")) for i in issues)
+    # second call is a no-op (idempotent)
+    assert main_mod._device_meta_patch(workspace=str(ws)) is False
+
+
+def test_run_builder_device_patch_no_rebuild(monkeypatch, tmp_path):
+    """A complete, well-scored page missing only the viewport meta gets the
+    cheap deterministic patch — NOT a second index.html build round."""
+    import main as main_mod
+
+    monkeypatch.setattr(main_mod.hc, "HERMES_HOME", str(tmp_path))
+    ws = tmp_path / "wsE"
+    ws.mkdir()
+    calls = []
+
+    def fake_execute(*, board, task_id, workspace, provider, model, prompt,
+                     objective="", artifact_name=None, api_key=None, max_tokens=None):
+        calls.append(artifact_name)
+        (Path(workspace) / artifact_name).write_text(_polished_page(), encoding="utf-8")
+        return {"ok": True, "elapsed_s": 1}
+
+    monkeypatch.setattr(main_mod.hc, "thin_execute", fake_execute)
+
+    out = main_mod._run_builder(
+        slug="flux-demo-regr", task_id="tb", workspace=str(ws),
+        provider="gemini", model="g", objective="Build a landing page for Nebula",
+        brief="plan", task_title=hc.DEMO_BUILDER_TITLE,
+        max_tokens=demo_llm.demo_builder_max_tokens("Build a landing page for Nebula"))
+
+    assert calls.count("index.html") == 1     # no rebuild consumed for one-liner
+    assert out.get("ok")

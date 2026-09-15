@@ -494,10 +494,15 @@ _WEB_BUILD_SPEC = (
     "contact/form, footer. EVERY named section must actually exist — never link "
     "to a missing section.\n"
     "ACCESSIBILITY & QA:\n"
-    "- Add <html lang>, <title>, meta description, a skip link, visible "
+    "- Add <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"> "
+    "in <head> (mobile MUST scale correctly), <html lang=\"en\">, <title>, meta "
+    "description, a skip link, visible "
     ":focus-visible styles, ARIA labels on icon-only controls, and of course "
     "assignment of alt — but there are no images: use inline SVG icons or CSS "
     "gradients only.\n"
+    "- Include @media (max-width: …) queries so the layout adapts on a phone "
+    "screen (stacked cards, working hamburger) — a desktop-only page that breaks "
+    "at 360px width FAILS.\n"
     "- ANTI-HALLUCINATION: never invent real addresses, phone numbers, emails, "
     "real companies, or quotes attributed to real people; invent plausible "
     "fictional details only. Every href=\"#...\" must target a real section id; "
@@ -694,6 +699,25 @@ def web_qa_issues(html: str) -> list[str]:
                 "image here", "type your", "change this", "dummy "):
         if tok in low:
             issues.append(f"placeholder/filler copy: '{tok}'")
+    # ---- accessibility & viewport audit (artifact-review: quality gate) ------
+    if not re.search(r'<meta\s+name=["\']viewport["\']', text, re.I):
+        issues.append("no viewport meta tag — page will not scale on mobile devices")
+    if not re.search(r'<html\b[^>]*\blang\s*=', text, re.I):
+        issues.append("no lang attribute on <html> — screen readers cannot identify the language")
+    imgs = re.findall(r'<img\b[^>]*>', text, re.I)
+    for tag in imgs:
+        src = re.search(r'src=["\']([^"\']+)["\']', tag)
+        if src and not re.search(r'\balt\s*=', tag):
+            issues.append(f"image without alt attribute ({src.group(1)[:60]})")
+    inputs = re.findall(r'<input\b[^>]*>', text, re.I)
+    if inputs and not re.search(r'<label\b', text, re.I):
+        issues.append("form inputs present but no <label> elements — inaccessible forms")
+    if re.search(r'@media[^{]*\(.*max-width', css_text, re.I | re.S) or re.search(r'@media[^{]*\(.*min-width', css_text, re.I | re.S):
+        pass  # responsive breakpoints present — good
+    elif len(text) > 2000:
+        issues.append("no responsive breakpoints (@media queries) — page will not adapt to screen sizes")
+    if re.search(r'<img\b[^>]*>\s*<img\b', text, re.I) or len(imgs) > 8:
+        issues.append(f"many images ({len(imgs)}) — verify they are not base64-inlined (increases page weight)")
     return issues
 
 
@@ -819,6 +843,22 @@ def web_deliverable_score(html: str) -> int:
         score += 10
     elif visible < 80:
         score -= 30
+    # artifact-review quality gate: accessibility/viewport/responsive signals
+    if re.search(r'<meta\s+name=["\']viewport["\']', text, re.I):
+        score += 5
+    else:
+        score -= 5
+    if re.search(r'<html\b[^>]*\blang\s*=', text, re.I):
+        score += 5
+    else:
+        score -= 5
+    imgs = re.findall(r'<img\b[^>]*>', text, re.I)
+    if not imgs or all(re.search(r'\balt\s*=', t) for t in imgs):
+        score += 5
+    elif any(t for t in imgs if not re.search(r'\balt\s*=', t)):
+        score -= 5
+    if not re.search(r'@media[^{]*\(', text, re.I):
+        score -= 5
     return max(0, min(100, score))
 
 
@@ -1049,7 +1089,14 @@ def auditor_prompt(task_title: str, objective: str, design: str = "",
         f"Task: {task_title}\n\n"
         f"Objective: {objective}\n\n"
         "Act as the Auditor. Produce AUDIT.md, a SHORT acceptance report for the "
-        "final deliverable just produced (at most 18 lines):\n"
+        "final deliverable just produced (at most 18 lines). Run the artifact-review "
+        "evidence gate on it and score each gate:\n"
+        "  completeness — does the deliverable fully cover the objective's sections/features?\n"
+        "  buildability  — is it a single coherent, self-contained html page that renders?\n"
+        "  quality       — design tokens consistent, sections filled with real copy, "
+        "viewport/lang/accessibility present, responsive at mobile widths?\n"
+        "  safety        — no secrets, no external resources, nothing sandbox-hostile?\n"
+        "Then give:\n"
         "- Verdict: one of PASS / MINOR ISSUES / FAIL.\n"
         "- Requirements coverage: confirm each major section/feature from the "
         "objective is present, naming them concretely.\n"

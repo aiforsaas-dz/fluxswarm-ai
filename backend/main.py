@@ -1997,6 +1997,49 @@ def _append_missing_content(*, slug: str, task_id: str, workspace: str,
         return False
 
 
+def _device_meta_patch(*, workspace: str) -> bool:
+    """Deterministic cheap corner-patch for a COMPLETE page missing the
+    device/accessibility head basics (viewport meta, <html lang>). One-line
+    regex fixes — never a full rebuild (a rebuild re-truncates the same way).
+    Also injects a minimal responsive rule when the page has zero @media
+    queries and CSS exists. Returns True when anything was patched."""
+    try:
+        path = Path(workspace) / "index.html"
+        html = path.read_text(encoding="utf-8", errors="ignore")
+        if not html.strip():
+            return False
+        changed = False
+        if not re.search(r'<meta\s+name=["\']viewport["\']', html, re.I):
+            head_m = re.search(r"<head([^>]*)>", html, re.I)
+            if head_m:
+                html = html.replace(
+                    head_m.group(0),
+                    head_m.group(0) + "\n<meta name=\"viewport\" "
+                    "content=\"width=device-width, initial-scale=1\">",
+                    1)
+                changed = True
+        if not re.search(r"<html\b[^>]*\blang\s*=", html, re.I):
+            html = re.sub(r"(<html[^>]*)>", r'\1 lang="en">', html, count=1,
+                          flags=re.I)
+            if "<html lang" in html or '<html lang' in html:
+                changed = True
+        css = "\n".join(re.findall(r"<style[^>]*>(.*?)</style>", html, re.S))
+        if css and not re.search(r"@media", css):
+            body_m = re.search(r"\}\s*</style>", html, re.S)
+            if body_m:
+                html = html.replace(
+                    body_m.group(0),
+                    "@media(max-width:640px){.cards{grid-template-columns:1fr!important}section{padding:48px 16px!important}}.bars{display:none}.bars.open{display:flex}"
+                    + body_m.group(0),
+                    1)
+                changed = True
+        if changed:
+            path.write_text(html, encoding="utf-8")
+        return changed
+    except Exception:
+        return False
+
+
 def _run_builder(*, slug: str, task_id: str, workspace: str, provider, model,
                  objective: str, brief: str, task_title: str,
                  api_key: str | None = None, max_tokens: int | None = None,
@@ -2132,6 +2175,18 @@ def _run_builder(*, slug: str, task_id: str, workspace: str, provider, model,
                              provider=provider, model=model,
                              objective=objective, api_key=api_key):
                 out["anchor_patched"] = True
+        # Device/accessibility corner-patch: viewport meta + <html lang> are
+        # one-line deterministic fixes (a rebuild would just re-truncate at the
+        # same token ceiling). Apply after the nav fix so a complete page always
+        # ships mobile-scalable and language-announced.
+        if not needs:
+            issues_now = demo_llm.web_qa_issues(
+                (Path(workspace) / "index.html").read_text(
+                    encoding="utf-8", errors="ignore"))
+            if any(i.startswith(("no viewport meta tag", "no lang attribute",
+                                 "no responsive breakpoints")) for i in issues_now):
+                if _device_meta_patch(workspace=workspace):
+                    out["device_patched"] = True
     return out
 
 
