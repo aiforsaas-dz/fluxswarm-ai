@@ -247,7 +247,13 @@ def test_builder_token_budget_scales_with_web_goals():
     # project code comes back complete), while doc lanes keep the lean budget.
     assert demo_llm.builder_max_tokens("a CLI tool") == demo_llm._DELIVERABLE_MAX_TOKENS
     assert demo_llm.lane_max_tokens("a landing page", None) > 400
-    assert demo_llm.lane_max_tokens("a CLI tool", "PLAN.md") == demo_llm._NORMAL_MAX_TOKENS
+    # The Planner lane gets a dedicated budget large enough for the full
+    # EXECUTABLE plan (requirements/tasks/acceptance criteria + traceability),
+    # above the lean arch/devops/tdd/review doc cap.
+    assert demo_llm.lane_max_tokens("a CLI tool", "PLAN.md") \
+        == demo_llm._PLAN_MAX_TOKENS
+    assert demo_llm.lane_max_tokens("a CLI tool", "PLAN.md") \
+        > demo_llm._NORMAL_MAX_TOKENS
     # Complex multi-file goals (auth/db/api + UI) keep the web budget AND get
     # multi-file headroom so the pack isn't truncated by the single-file cap.
     assert demo_llm.builder_max_tokens(

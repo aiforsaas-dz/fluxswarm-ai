@@ -998,6 +998,22 @@ def _insert_gate_event(slug: str, task_id: str, evidence: dict) -> None:
         pass
 
 
+def _record_plan_validation_note(slug: str, task_id: str, ws_root) -> None:
+    """Best-effort board note when the Planner's PLAN.md is not an executable
+    implementation plan (schema/traceability issues). The build still proceeds
+    (plan_to_brief tolerates any text), but the board stays honest about the
+    plan's quality. Never raises."""
+    try:
+        issues = demo_llm.plan_executable_issues(_doc(ws_root / "PLAN.md"))
+        if issues:
+            hc._insert_event(
+                slug, task_id, "note",
+                f"Plan validation: {len(issues)} issue(s) — "
+                + "; ".join(issues[:3]))
+    except Exception:
+        pass
+
+
 def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None = None,
                      custom_agents: list[dict] | None = None,
                      context_payload: dict | None = None) -> None:
@@ -1145,6 +1161,10 @@ def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None =
                                 prompt=make_prompt(brief), objective=goal,
                                 artifact_name=artifact, api_key=api_key,
                                 max_tokens=demo_llm.lane_max_tokens(goal, artifact))
+                if assignee == "ecc-planner":
+                    # Phase 7: the Planner must ship an EXECUTABLE plan; record
+                    # (honestly, non-blocking) any schema/traceability issues.
+                    _record_plan_validation_note(slug, tid, ws_root)
             if assignee == "ecc-reviewer":
                 # Evidence gate runs after Reviewer so the Builder only starts
                 # once the workspace holds a verified (deterministic) evidence

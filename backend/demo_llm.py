@@ -39,6 +39,11 @@ _COMPLEX_MAX_TOKENS = int(os.environ.get("FLUXSWARM_COMPLEX_BUILDER_MAX_TOKENS",
 # The short plan/arch/devops/tdd/review lanes keep the lean default.
 _DELIVERABLE_MAX_TOKENS = int(os.environ.get("FLUXSWARM_DELIVERABLE_MAX_TOKENS", "2400"))
 _NORMAL_MAX_TOKENS = 800
+# The Planner lane (PLAN.md) now emits a full EXECUTABLE implementation plan
+# (requirements/acceptance criteria/tasks with traceability + dependencies,
+# risks, components, test expectations, deployment impact), which no longer
+# fits the lean 800-token doc budget. It gets its own dedicated budget.
+_PLAN_MAX_TOKENS = int(os.environ.get("FLUXSWARM_PLAN_MAX_TOKENS", "2400"))
 
 # Demo builder budget: big enough for a complete single-file page but small
 # enough to finish inside the demo wall-clock cap on the free pool (each pool
@@ -288,10 +293,13 @@ def demo_builder_max_tokens(objective: str = "") -> int:
 
 
 def lane_max_tokens(objective: str, artifact_name: str | None) -> int:
-    """Per-lane token budget: the final deliverable gets the large budget; the
-    smaller plan/doc/lint lanes keep the normal cap."""
+    """Per-lane token budget: the final deliverable gets the large budget;
+    the Planner's executable PLAN.md keeps its own dedicated budget; the
+    smaller arch/devops/tdd/review doc lanes keep the lean default."""
     if artifact_name is None:
         return builder_max_tokens(objective)
+    if (artifact_name or "").strip().lower() == "plan.md":
+        return _PLAN_MAX_TOKENS
     return _NORMAL_MAX_TOKENS
 
 
@@ -310,21 +318,50 @@ def _codebase_block(codebase_ctx: str = "") -> str:
 
 
 def planner_prompt(task_title: str, objective: str, codebase_ctx: str = "") -> str:
-    prefix = " Deliver the site as ONE self-contained index.html." if _is_web_objective(objective) else ""
+    web_aspect = (
+        " Since the objective is web UI, ALSO include the renderable section "
+        "contract: \"palette\": one line CSS palette description, \"sections\": "
+        "[\"<nav item>\", ...] (4-7 items), \"ids\": {\"<nav item>\": "
+        "\"<unique section id>\"} mapping EVERY nav item to the exact id of its "
+        "section, and \"cta\": one line. Plan the REAL CONTENT of each section "
+        "(never an empty shell): for a menu list dish categories; for landings "
+        "list features/testimonials/pricing — each section must be filled with "
+        "actual copy when built."
+        if _is_web_objective(objective) else ""
+    )
     return (
         f"Task: {task_title}\n\n"
         f"Objective: {objective}\n\n"
-        "Act as the Planner. Produce a SHORT but STRUCTURED plan as a SINGLE "
-        "JSON object (output ONLY the JSON, no markdown, no fences) with keys: "
-        "{\"overview\": \"2 lines\", \"palette\": \"one line CSS palette "
-        "description\", \"sections\": [\"<nav item>\", ...], \"ids\": {"
-        "\"<nav item>\": \"<unique section id>\"}, \"features\": [\"...\"], "
-        "\"cta\": \"one line\", \"constraints\": [\"...\"]}. List 4-7 "
-        "sections; every nav item must map to the exact id of its section. "
-        "Plan the REAL CONTENT of each section (never an empty shell): for a "
-        "menu list dish categories; for landings list features/testimonials/"
-        "pricing — each section must be filled with actual copy when built."
-        f"{prefix}"
+        "Act as the Planner. Produce an EXECUTABLE implementation plan as a "
+        "SINGLE JSON object (output ONLY the JSON, no markdown, no fences, no "
+        "stray prose) with keys: "
+        "{\"overview\": \"2 lines\", "
+        "\"requirements\": [{\"id\": \"REQ-1\", \"title\": \"...\", "
+        "\"detail\": \"...\"}], "
+        "\"features\": [\"...\"], "
+        "\"tasks\": [{\"id\": \"T-1\", \"title\": \"...\", "
+        "\"requirement_ids\": [\"REQ-1\"], "
+        "\"acceptance_criteria_ids\": [\"AC-1\"], "
+        "\"depends_on\": [\"T-2\"], "
+        "\"components\": [\"<file/module affected>\"], "
+        "\"test_expectations\": [\"<the test that proves this task>\"]}], "
+        "\"acceptance_criteria\": [{\"id\": \"AC-1\", \"title\": \"...\"}], "
+        "\"dependencies\": [\"T-2 must finish before T-1\", \"...\"], "
+        "\"risks\": [{\"id\": \"R-1\", \"risk\": \"...\", \"mitigation\": "
+        "\"...\"}], "
+        "\"affected_components\": [\"<concrete files/modules>\"], "
+        "\"test_expectations\": [\"<tests to write/run>\"], "
+        "\"deployment_impact\": \"<what deploying this changes>\", "
+        "\"constraints\": [\"...\"]}. "
+        "TRACEABILITY (required): every task MUST link to at least one "
+        "\"requirement_ids\" or \"acceptance_criteria_ids\" entry by exact id, "
+        "and every requirement and every acceptance criterion MUST be "
+        "referenced (\"traced to\") by at least one task. "
+        "Each task must be executable: a concrete action carrying its "
+        "dependencies, disturbed components and the test or check that proves "
+        "it is done — the plan is parsed and executed task by task, not read "
+        "once as prose."
+        f"{web_aspect}"
         f"{_codebase_block(codebase_ctx)}"
         " Do not write any files.\n"
     )
@@ -796,36 +833,45 @@ def web_content_issue(issues: list[str]) -> bool:
     return any(i.startswith(("hollow page:", "skeleton page:")) for i in issues)
 
 
+def parse_plan(plan_text: str) -> dict:
+    """Tolerant extraction of the Planner's JSON plan from PLAN.md. Accepts a
+    bare JSON object, ``` fences and JSON embedded in stray prose; returns {}
+    when nothing parseable exists (never raises)."""
+    raw = (plan_text or "").strip()
+    if not raw:
+        return {}
+    try:
+        obj = json.loads(raw)
+    except Exception:
+        m = re.search(r"\{.*\}", raw, re.S)
+        if not m:
+            return {}
+        try:
+            obj = json.loads(m.group(0))
+        except Exception:
+            return {}
+    return obj if isinstance(obj, dict) else {}
+
+
 def plan_nav_items(plan_text: str) -> dict[str, str]:
     """Plan contract mapping section id -> nav label from PLAN.md: the Planner's
     schema promises \"every nav item must map to the exact id of its section\"
     (ids = {label: id}), with the 'sections' list as the fallback (id == label).
     Empty when the plan cannot be parsed (never raises)."""
     items: dict[str, str] = {}
-    raw = (plan_text or "").strip()
-    obj = None
-    try:
-        obj = json.loads(raw)
-    except Exception:
-        m = re.search(r"\{.*\}", raw, re.S)
-        if m:
-            try:
-                obj = json.loads(m.group(0))
-            except Exception:
-                obj = None
-    if isinstance(obj, dict):
-        idmap = obj.get("ids")
-        if isinstance(idmap, dict) and idmap:
-            for label, sid in idmap.items():
-                if isinstance(sid, str) and sid.strip() and sid != "top":
-                    items.setdefault(sid.strip(),
-                                     label.strip() if isinstance(label, str) else "")
-        else:
-            sections = obj.get("sections")
-            if isinstance(sections, list):
-                for s in sections:
-                    if isinstance(s, str) and s.strip() and s != "top":
-                        items.setdefault(s.strip(), s.strip())
+    obj = parse_plan(plan_text)
+    idmap = obj.get("ids")
+    if isinstance(idmap, dict) and idmap:
+        for label, sid in idmap.items():
+            if isinstance(sid, str) and sid.strip() and sid != "top":
+                items.setdefault(sid.strip(),
+                                 label.strip() if isinstance(label, str) else "")
+    else:
+        sections = obj.get("sections")
+        if isinstance(sections, list):
+            for s in sections:
+                if isinstance(s, str) and s.strip() and s != "top":
+                    items.setdefault(s.strip(), s.strip())
     return items
 
 
@@ -849,6 +895,141 @@ def plan_content_missing(html: str, plan_text: str) -> list[str]:
         return []
     return sorted(sid for sid in promised
                   if _element_content_len(html, sid) == 0)
+
+
+_PLAN_REQUIRED_SECTIONS = (
+    "requirements", "features", "tasks", "dependencies",
+    "acceptance_criteria", "risks", "affected_components",
+    "test_expectations", "deployment_impact",
+)
+
+
+def plan_section(plan_text: str, key: str) -> list:
+    """Uniform extractor for the executable-plan list sections. Returns [] when
+    the key is missing, not a list, or the plan is unparseable (never raises)."""
+    raw = parse_plan(plan_text).get(key)
+    if isinstance(raw, list):
+        return [x for x in raw if x not in (None, "", [], {})]
+    return []
+
+
+def plan_requirements(plan_text: str) -> list[dict]:
+    """Requirement objects from the executable plan: each must be a dict with an
+    ``id``/``title`` (the prompt contract). Tolerant of string entries."""
+    return _id_entries(plan_text, "requirements")
+
+
+def plan_acceptance_criteria(plan_text: str) -> list[dict]:
+    """Acceptance-criterion objects from the executable plan (see above)."""
+    return _id_entries(plan_text, "acceptance_criteria")
+
+
+def plan_risks(plan_text: str) -> list[dict]:
+    """Risk objects from the executable plan (``id``/``risk``/``mitigation``)."""
+    return _id_entries(plan_text, "risks")
+
+
+def _id_entries(plan_text: str, key: str) -> list[dict]:
+    out: list[dict] = []
+    for item in parse_plan(plan_text).get(key) or []:
+        if isinstance(item, dict) and (item.get("id") or item.get("title")):
+            out.append(item)
+        elif isinstance(item, str) and item.strip():
+            out.append({"id": item.strip(), "title": item.strip()})
+    return out
+
+
+def plan_tasks(plan_text: str) -> list[dict]:
+    """Executable tasks from the plan. Each task keeps its keys untouched; a
+    bare-string task is promoted to a dict with that string as its title."""
+    tasks: list[dict] = []
+    for item in parse_plan(plan_text).get("tasks") or []:
+        if isinstance(item, str) and item.strip():
+            tasks.append({"title": item.strip()})
+        elif isinstance(item, dict) and (item.get("id") or item.get("title")):
+            tasks.append(item)
+    return tasks
+
+
+def plan_trace(plan_text: str) -> dict:
+    """task id -> {"requirements": [...], "acceptance_criteria": [...]} — the
+    traceability map an executor uses to prove each task is linked to its
+    requirement(s) and/or acceptance criterion."""
+    trace: dict = {}
+    for t in plan_tasks(plan_text):
+        tid = str(t.get("id", "")).strip()
+        if not tid:
+            continue
+        trace[tid] = {
+            "requirements": list(t.get("requirement_ids") or []),
+            "acceptance_criteria": list(t.get("acceptance_criteria_ids") or []),
+        }
+    return trace
+
+
+def plan_executable_issues(plan_text: str) -> list[str]:
+    """Deterministic validation of an executable plan. Returns the ordered list
+    of violations (empty === the plan is executable):
+
+    * section coverage — every one of the 9 required sections is present;
+    * task traceability — every task links to >=1 requirement OR acceptance
+      criterion by exact id;
+    * reference integrity — no task references an undefined requirement /
+      acceptance-criterion / task id;
+    * reverse traceability — every requirement and every acceptance criterion
+      is referenced by at least one task.
+    """
+    issues: list[str] = []
+    obj = parse_plan(plan_text)
+    if not obj:
+        return ["plan is not structured JSON"]
+
+    for key in _PLAN_REQUIRED_SECTIONS:
+        if key not in obj or obj.get(key) in (None, "", [], {}):
+            issues.append(f"missing required section '{key}'")
+
+    tasks = plan_tasks(plan_text)
+    requirements = plan_requirements(plan_text)
+    criteria = plan_acceptance_criteria(plan_text)
+
+    if not tasks:
+        issues.append("plan has no tasks (nothing to execute)")
+
+    req_ids = {str(r.get("id", "")).strip()
+               for r in requirements if str(r.get("id", "")).strip()}
+    ac_ids = {str(c.get("id", "")).strip()
+              for c in criteria if str(c.get("id", "")).strip()}
+    task_ids = {str(t.get("id", "")).strip() for t in tasks if str(t.get("id", "")).strip()}
+
+    traced_reqs: set[str] = set()
+    traced_acs: set[str] = set()
+    for t in tasks:
+        tid = str(t.get("id", "")).strip() or "<task>"
+        treq = {str(x).strip() for x in (t.get("requirement_ids") or []) if str(x).strip()}
+        tac = {str(x).strip() for x in (t.get("acceptance_criteria_ids") or []) if str(x).strip()}
+        if not treq and not tac:
+            issues.append(f"task {tid} has no requirement or acceptance-criterion link")
+        for r in sorted(treq - req_ids):
+            issues.append(f"task {tid} references undefined requirement '{r}'")
+        for a in sorted(tac - ac_ids):
+            issues.append(f"task {tid} references undefined acceptance criterion '{a}'")
+        for dep in (t.get("depends_on") or []):
+            d = str(dep).strip()
+            if d and d not in task_ids:
+                issues.append(f"task {tid} depends on undefined task '{d}'")
+        traced_reqs |= treq
+        traced_acs |= tac
+
+    for r in sorted(req_ids - traced_reqs):
+        issues.append(f"requirement '{r}' is not traced to by any task")
+    for a in sorted(ac_ids - traced_acs):
+        issues.append(f"acceptance criterion '{a}' is not traced to by any task")
+    return issues
+
+
+def plan_is_executable(plan_text: str) -> bool:
+    """True when the plan passes the executable-plan validation (no issues)."""
+    return not plan_executable_issues(plan_text)
 
 
 def web_section_ids(html: str) -> set[str]:
