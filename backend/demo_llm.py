@@ -542,6 +542,23 @@ def web_artifact_needs_repair(text: str) -> bool:
     return not bool(re.search(r"</html\s*>", t, re.IGNORECASE))
 
 
+def unclosed_block_issues(html: str) -> list[str]:
+    """Structural truncation signatures regex QA cannot see: a <style>/<script>
+    block opened but never closed (CSS/JS cut mid-block while the page still
+    carries a closing </html>). Cheap deterministic open/close count — high
+    signal for LLM token-ceiling cut-offs, near-zero false positives on
+    well-formed single-file pages."""
+    out: list[str] = []
+    for tag in ("style", "script"):
+        opens = re.findall(rf"<{tag}\b", html, re.I)
+        closes = re.findall(rf"</{tag}\s*>", html, re.I)
+        if len(opens) > len(closes):
+            out.append(
+                f"unclosed <{tag}> block ({len(opens)} opened, "
+                f"{len(closes)} closed) — content cut mid-block")
+    return out
+
+
 _HEX_COLOR_RE = re.compile(r'#((?:[0-9a-f]{3}){1,2}|[0-9a-f]{8})\b', re.IGNORECASE)
 _BG_PROP_RE = re.compile(r'background(?:-color)?\s*:\s*([^;{}]+)')
 _TEXT_COLOR_RE = re.compile(r'(?<!-|[a-z])color\s*:\s*([^;{}]+)')
@@ -718,6 +735,7 @@ def web_qa_issues(html: str) -> list[str]:
         issues.append("no responsive breakpoints (@media queries) — page will not adapt to screen sizes")
     if re.search(r'<img\b[^>]*>\s*<img\b', text, re.I) or len(imgs) > 8:
         issues.append(f"many images ({len(imgs)}) — verify they are not base64-inlined (increases page weight)")
+    issues.extend(unclosed_block_issues(text))
     return issues
 
 
@@ -776,6 +794,61 @@ def web_content_issue(issues: list[str]) -> bool:
     """Hollow/skeleton pages need the narrow content-completion patch — NOT a
     full rebuild (which re-truncates at the same token ceiling)."""
     return any(i.startswith(("hollow page:", "skeleton page:")) for i in issues)
+
+
+def plan_nav_items(plan_text: str) -> dict[str, str]:
+    """Plan contract mapping section id -> nav label from PLAN.md: the Planner's
+    schema promises \"every nav item must map to the exact id of its section\"
+    (ids = {label: id}), with the 'sections' list as the fallback (id == label).
+    Empty when the plan cannot be parsed (never raises)."""
+    items: dict[str, str] = {}
+    raw = (plan_text or "").strip()
+    obj = None
+    try:
+        obj = json.loads(raw)
+    except Exception:
+        m = re.search(r"\{.*\}", raw, re.S)
+        if m:
+            try:
+                obj = json.loads(m.group(0))
+            except Exception:
+                obj = None
+    if isinstance(obj, dict):
+        idmap = obj.get("ids")
+        if isinstance(idmap, dict) and idmap:
+            for label, sid in idmap.items():
+                if isinstance(sid, str) and sid.strip() and sid != "top":
+                    items.setdefault(sid.strip(),
+                                     label.strip() if isinstance(label, str) else "")
+        else:
+            sections = obj.get("sections")
+            if isinstance(sections, list):
+                for s in sections:
+                    if isinstance(s, str) and s.strip() and s != "top":
+                        items.setdefault(s.strip(), s.strip())
+    return items
+
+
+def plan_promised_ids(plan_text: str) -> list[str]:
+    """Section ids the Planner promised in PLAN.md. This is the section CONTRACT
+    the Builder is expected to render — the reference the repair path reconciles
+    the finished page against. Empty when the plan cannot be parsed."""
+    return sorted(plan_nav_items(plan_text).keys())
+
+
+def plan_content_missing(html: str, plan_text: str) -> list[str]:
+    """Promised plan sections with NO element on the finished page at all.
+
+    ``web_content_gap`` only sees sections the page itself nav-links, so a
+    section the plan promised but the builder's token ceiling dropped entirely
+    (never nav-linked, never <section id=...>) is invisible to every existing
+    check and ships \"missing\". This reconciles the page against PLAN.md's
+    contract instead of the page's own nav."""
+    promised = set(plan_promised_ids(plan_text))
+    if not promised:
+        return []
+    return sorted(sid for sid in promised
+                  if _element_content_len(html, sid) == 0)
 
 
 def web_section_ids(html: str) -> set[str]:
@@ -871,7 +944,8 @@ _HARD_QA_PREFIXES = ("truncated", "too short", "broken anchor", "sandbox-unsafe"
                      "almost no readable text", "hollow page", "skeleton page",
                      "no <style> block", "unstyled page", "flat palette",
                      "no rounded corners", "no gradients or shadows",
-                     "no buttons/CTAs")
+                     "no buttons/CTAs", "unclosed <style> block",
+                     "unclosed <script> block")
 
 
 def web_qa_should_repair(issues: list[str]) -> bool:

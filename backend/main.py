@@ -2040,6 +2040,42 @@ def _device_meta_patch(*, workspace: str) -> bool:
         return False
 
 
+def _plan_nav_patch(*, workspace: str, plan_text: str) -> bool:
+    """Deterministic corner-patch that links freshly plan-reconciled sections
+    into the nav. The Planner's contract says every nav item maps to the exact
+    id of its section; after `_append_missing_content` restores a promised-but-
+    dropped section the nav still has no anchor for it, so QA would flag it as
+    an unreachable \"unlinked section id\". Cheap regex append before </nav>,
+    zero LLM calls, idempotent (never repeats an id already linked)."""
+    try:
+        path = Path(workspace) / "index.html"
+        html = path.read_text(encoding="utf-8", errors="ignore")
+        if not html.strip() or not plan_text.strip():
+            return False
+        labels = demo_llm.plan_nav_items(plan_text)
+        if not labels:
+            return False
+        nav_m = re.search(r"<(nav[^>]*)>.*?</nav>", html, re.S | re.I)
+        if not nav_m:
+            return False
+        nav = nav_m.group(0)
+        linked = {h for h in re.findall(r'''href=["']#([^"']+)["']''', nav)}
+        add = {
+            sid: label for sid, label in labels.items()
+            if sid not in linked and demo_llm._element_content_len(html, sid) > 0
+        }
+        if not add:
+            return False
+        new_links = "".join(
+            f"<a href=\"#{sid}\">{label or sid}</a>"
+            for sid, label in sorted(add.items()))
+        patched = nav[:-len("</nav>")] + new_links + "</nav>"
+        path.write_text(html.replace(nav, patched, 1), encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
 def _run_builder(*, slug: str, task_id: str, workspace: str, provider, model,
                  objective: str, brief: str, task_title: str,
                  api_key: str | None = None, max_tokens: int | None = None,
@@ -2166,6 +2202,35 @@ def _run_builder(*, slug: str, task_id: str, workspace: str, provider, model,
                 out["content_patched"] = True
             else:
                 break
+            text, issues, needs, score = _audit()
+        # Plan-reconciliation: the Planner promised N sections; the token
+        # ceiling can make the Builder DROP some entirely (never nav-linked, no
+        # element at all). web_content_gap only sees the page's own nav, so it
+        # misses those — reconcile against PLAN.md's section contract instead
+        # and fill any promised-but-absent section (same bounded narrow call).
+        try:
+            plan_text = (Path(workspace) / "PLAN.md").read_text(
+                encoding="utf-8", errors="ignore")
+        except Exception:
+            plan_text = ""
+        for _ in range(2):
+            plan_missing = demo_llm.plan_content_missing(text, plan_text)
+            if not plan_missing:
+                break
+            if _append_missing_content(
+                    slug=slug, task_id=task_id, workspace=workspace,
+                    provider=provider, model=model, objective=objective,
+                    api_key=api_key, brief=brief, missing_ids=plan_missing[:3]):
+                out["plan_sections_completed"] = True
+            else:
+                break
+            text, issues, needs, score = _audit()
+        # Link the restored plan sections into the nav (deterministic, no LLM):
+        # the plan's contract is nav item <-> section id, and an unreachable
+        # section would immediately re-earn an "unlinked section id" flag.
+        if out.get("plan_sections_completed") and _plan_nav_patch(
+                workspace=workspace, plan_text=plan_text):
+            out["plan_nav_patched"] = True
             text, issues, needs, score = _audit()
         # Corner-patch: page is complete now, but nav anchors may still dangle
         # (dead href='#', anchors to missing ids). Fix deterministically, and

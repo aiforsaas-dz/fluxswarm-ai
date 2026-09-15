@@ -975,3 +975,94 @@ def test_run_builder_device_patch_no_rebuild(monkeypatch, tmp_path):
 
     assert calls.count("index.html") == 1     # no rebuild consumed for one-liner
     assert out.get("ok")
+
+
+def test_unclosed_block_issues_flag_cut_style():
+    """A complete page (</html> present) whose <style> block is cut mid-way —
+    the classic token-ceiling signature regex QA misses — must be flagged as a
+    structural issue and therefore trigger a repair round."""
+    cut = _polished_page().replace("</style>", "", 1)
+    issues = demo_llm.web_qa_issues(cut)
+    assert any(i.startswith("unclosed <style> block") for i in issues)
+    # the hard-repair gate sees it (it is a truncation-style defect)
+    assert demo_llm.web_qa_should_repair(issues)
+    # a well-formed page has none
+    assert not any(i.startswith("unclosed <") for i in demo_llm.web_qa_issues(_polished_page()))
+
+
+def test_plan_nav_items_and_plan_content_missing():
+    """plan_nav_items/plan_promised_ids extract the Planner's section contract
+    (ids map + sections fallback), and plan_content_missing finds sections the
+    builder's token ceiling dropped ENTIRELY (no element, not just an empty
+    shell web_content_gap would already see)."""
+    plan = ('{"overview":"o","palette":"p","sections":["Menu"],'
+            '"ids":{"Menu":"menu","About":"about"},'
+            '"features":[],"cta":"c","constraints":[]}')
+    items = demo_llm.plan_nav_items(plan)
+    assert items == {"menu": "Menu", "about": "About"}
+    assert demo_llm.plan_promised_ids(plan) == ["about", "menu"]
+    page = _styled_body(
+        "<nav><a href='#menu'>Menu</a></nav>"
+        "<section id='menu'><h1>M</h1>" + ("<p>" + "x" * 200 + "</p>") * 2 +
+        "</section><footer>f</footer>")
+    assert demo_llm.plan_content_missing(page, plan) == ["about"]
+    # nav-linked empty shells are the existing web_content_gap's job, not ours
+    assert demo_llm.web_content_gap(page) == []
+    assert demo_llm.plan_content_missing(page, "not a plan") == []
+    assert demo_llm.plan_content_missing(page, "") == []
+
+
+def test_run_builder_plan_reconciliation_fills_dropped_sections(monkeypatch, tmp_path):
+    """When the Planner promised sections the Builder never rendered (dropped
+    by the token ceiling, never nav-linked), _run_builder must restore them via
+    the bounded content call AND link them into the nav — no full rebuild."""
+    import main as main_mod
+
+    monkeypatch.setattr(main_mod.hc, "HERMES_HOME", str(tmp_path))
+    ws = tmp_path / "wsF"
+    ws.mkdir()
+    plan = ('{"overview":"o","palette":"p","sections":["Features","Pricing",'
+            '"FAQ","Contact"],"ids":{"Features":"features","Pricing":"pricing",'
+            '"FAQ":"faq","Contact":"contact"},"features":[],"cta":"c",'
+            '"constraints":[]}')
+    (ws / "PLAN.md").write_text(plan, encoding="utf-8")
+    calls = []
+    filled = ("<section id='faq'><h2>FAQ</h2>"
+              + ("<p>" + "f" * 300 + "</p>") * 2 + "</section>"
+              "<section id='contact'><h2>Contact</h2>"
+              + ("<p>" + "c" * 300 + "</p>") * 2 +
+              "<button class='btn'>Contact us</button></section>")
+
+    def fake_execute(*, board, task_id, workspace, provider, model, prompt,
+                     objective="", artifact_name=None, api_key=None, max_tokens=None):
+        calls.append(artifact_name)
+        if artifact_name == "index.html":
+            (Path(workspace) / "index.html").write_text(
+                _polished_page(), encoding="utf-8")
+        else:
+            (Path(workspace) / artifact_name).write_text(
+                filled, encoding="utf-8")
+        return {"ok": True, "elapsed_s": 1}
+
+    monkeypatch.setattr(main_mod.hc, "thin_execute", fake_execute)
+
+    out = main_mod._run_builder(
+        slug="flux-demo-regr", task_id="tb", workspace=str(ws),
+        provider="gemini", model="g",
+        objective="Build a landing page for Nebula",
+        brief="plan", task_title=hc.DEMO_BUILDER_TITLE,
+        max_tokens=demo_llm.demo_builder_max_tokens("Build a landing page for Nebula"))
+
+    assert out.get("ok")
+    assert out.get("plan_sections_completed") is True
+    assert out.get("plan_nav_patched") is True
+    assert calls.count("index.html") == 1    # no full rebuild round
+    assert calls.count("index-content.html") == 1
+    final = (ws / "index.html").read_text(encoding="utf-8")
+    assert "id='faq'" in final and "id='contact'" in final
+    assert "#faq" in final and "#contact" in final
+    assert demo_llm.web_nav_targets(final) == ["contact", "faq", "features", "pricing"]
+    issues = demo_llm.web_qa_issues(final)
+    assert not any(i.startswith(("unlinked section id=#faq",
+                                 "unlinked section id=#contact")) for i in issues)
+    assert demo_llm.plan_content_missing(final, plan) == []
