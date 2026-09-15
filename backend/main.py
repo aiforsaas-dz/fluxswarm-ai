@@ -4940,12 +4940,21 @@ def api_security(slug: str, include_llm: bool = False, user: dict | None = Depen
         raise HTTPException(status_code=500, detail="Security scan failed")
 @app.websocket("/ws/{slug}")
 async def ws_board(websocket: WebSocket, slug: str):
-    # Token auth via query param. Strict, fail-closed rules:
-    #   1. No token  -> reject (no silent anonymous board access).
-    #   2. Malformed/unsigned token -> reject (do NOT treat as anonymous).
-    #   3. Token uid maps to a deleted user -> reject (user-existence check).
-    #   4. slug not owned by the user (and not a demo board) -> reject.
-    #   5. slug/format-traversal -> reject before accept (encoded ``../`` must
+    # Strict, fail-closed auth rules:
+    #   1. Auth comes from the HttpOnly ``fs_token`` session cookie FIRST — the
+    #      same-origin handshake carries it automatically, so browsers never
+    #      need (and after Phase 6 never emit) an auth token in the URL, where
+    #      it would leak through access/proxy logs, the Referer header and
+    #      history. The ``?token=`` query param is honoured ONLY as a fallback
+    #      for cookie-less (programmatic/non-browser) clients.
+    #   2. When a cookie IS present it is authoritative: it must validate, or
+    #      the socket is refused — a stale URL token never overrides the
+    #      cookie, so a leaked ``?token=`` cannot redirect someone else's
+    #      session.
+    #   3. Malformed/unsigned session -> reject (do NOT treat as anonymous).
+    #   4. Session uid maps to a deleted user -> reject (user-existence check).
+    #   5. slug not owned by the user (and not a demo board) -> reject.
+    #   6. slug/format-traversal -> reject before accept (encoded ``../`` must
     #      never reach the board store path builders, which prefix guards would
     #      otherwise let through).
     if not slug or len(slug) > 120 or not _SLUG_FORMAT_RE.match(slug):
@@ -4953,7 +4962,11 @@ async def ws_board(websocket: WebSocket, slug: str):
         await websocket.send_json({"type": "error", "detail": "invalid-slug"})
         await websocket.close()
         return
-    token = websocket.query_params.get("token")
+    cookie_token = (websocket.cookies or {}).get(_COOKIE_SESSION_NAME)
+    if cookie_token:
+        token = cookie_token
+    else:
+        token = websocket.query_params.get("token")
     if not token:
         await websocket.accept()
         await websocket.send_json({"type": "error", "detail": "unauthorized"})
