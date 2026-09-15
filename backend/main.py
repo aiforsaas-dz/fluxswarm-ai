@@ -239,8 +239,13 @@ atexit.register(serverlock.release)
 _START_TS = time.time()
 
 _SUBS: dict[str, set[WebSocket]] = {}
+# Phase 3: per (user, board) subscriber accounting — a single authenticated
+# client must not be able to fill EVERY slot on a shared demo board (each slot
+# spawns its own Hermes CLI poll subprocess every poll interval).
+_SUBS_USER: dict[tuple[int, str], set[WebSocket]] = {}
 
 _WS_MAX_SUBS_PER_SLUG = int(os.environ.get("FLUXSWARM_WS_MAX_SUBS_PER_SLUG", "64"))
+_WS_MAX_SUBS_PER_USER_SLUG = int(os.environ.get("FLUXSWARM_WS_MAX_SUBS_PER_USER_SLUG", "2"))
 
 def _payments_enabled() -> bool:
     """Read the billing gate live (not at import time) so tests / ops can switch
@@ -4930,12 +4935,25 @@ async def ws_board(websocket: WebSocket, slug: str):
         await websocket.send_json({"type": "error", "detail": "forbidden"})
         await websocket.close()
         return
+    # Phase 3: an owned-but-never-created board must fail fast, not connect and
+    # poll a missing store every 4s forever (matches the HTTP 404 gate).
+    if not slug.startswith("flux-demo-") and not _board_exists(slug):
+        await websocket.accept()
+        await websocket.send_json({"type": "error", "detail": "not-found"})
+        await websocket.close()
+        return
     await websocket.accept()
+    sub_key = (payload["uid"], slug)
     _SUBS.setdefault(slug, set()).add(websocket)
-    if len(_SUBS[slug]) > _WS_MAX_SUBS_PER_SLUG:
+    _SUBS_USER.setdefault(sub_key, set()).add(websocket)
+    over_slug = len(_SUBS[slug]) > _WS_MAX_SUBS_PER_SLUG
+    over_user = len(_SUBS_USER[sub_key]) > _WS_MAX_SUBS_PER_USER_SLUG
+    if over_slug or over_user:
         _SUBS[slug].discard(websocket)
-        await websocket.send_json({"type": "error",
-                                   "detail": "too many concurrent viewers on this board"})
+        _SUBS_USER[sub_key].discard(websocket)
+        detail = ("too many concurrent viewers on this board" if over_slug
+                  else "too many live connections from this account on this board")
+        await websocket.send_json({"type": "error", "detail": detail})
         await websocket.close()
         return
     try:
@@ -4953,8 +4971,11 @@ async def ws_board(websocket: WebSocket, slug: str):
                 await websocket.send_json({"type": "update", "tasks": tasks})
             except Exception:
                 await websocket.send_json({"type": "error", "detail": "board poll failed"})
-    except WebSocketDisconnect:
+    finally:
+        # Any exit — WebSocketDisconnect, a dead client mid-send, or the cap
+        # refusals above — must release BOTH the per-slug and per-user slots.
         _SUBS.get(slug, set()).discard(websocket)
+        _SUBS_USER.get(sub_key, set()).discard(websocket)
 
 
 @app.get("/robots.txt", response_class=PlainTextResponse)
