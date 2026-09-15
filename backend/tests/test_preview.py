@@ -119,13 +119,14 @@ def test_path_traversal_cannot_escape_workspace(_host):
     for path in ("..%2f..%2fsecret.txt", "../..%2fsecret.txt",
                  "subdir/../../secret.txt", ".%2e/.../secret.txt"):
         r = client.get(f"/p/{slug}/{path}")
-        # literal dot-segments may be normalized by the client/route (403); the
+        # literal dot-segments may be normalized by the client/route, or the
+        # slug boundary now 400s the malformed segment outright (Phase 5); the
         # requirement is that the escape NEVER yields 200 or the secret.
-        assert r.status_code in (403, 404), f"{path} -> {r.status_code} {r.text}"
+        assert r.status_code in (400, 403, 404), f"{path} -> {r.status_code} {r.text}"
         assert "TOP-SECRET" not in r.text
     # absolute-escaping attempts are likewise refused
     r = client.get(f"/p/{slug}/..%2f..%2fkanban.db")
-    assert r.status_code in (403, 404)
+    assert r.status_code in (400, 403, 404)
     assert "TOP-SECRET" not in r.text
 
 

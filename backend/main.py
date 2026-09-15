@@ -1260,6 +1260,22 @@ def _project_by_board_slug(slug: str) -> dict | None:
         return None
 
 
+# Phase 5: slug path params must be format-validated at the boundary. Server-
+# created slugs are ``u{uid}-{ts}-{hex}`` or ``flux-demo-*``; a slug carrying a
+# path separator (encoded ``/`` or ``..``) would sail past the auth-prefix
+# guards (e.g. ``u5-../../u9-proj`` starts with ``u5-``) into the filesystem
+# path builders and read ANOTHER board's store, and ``flux-demo-<script>``
+# would be echoed into demo page markup. Both classes are rejected here before
+# any prefix/ownership logic or path construction runs.
+_SLUG_FORMAT_RE = re.compile(r"^[A-Za-z0-9_-]{1,120}$")
+
+
+def _require_board_slug(slug: str) -> str:
+    if not slug or len(slug) > 120 or not _SLUG_FORMAT_RE.match(slug):
+        raise HTTPException(status_code=400, detail="Invalid board slug")
+    return slug
+
+
 def _board_exists(slug: str) -> bool:
     """True when *slug* names a real board: an on-disk workspace, or a projects
     row. Callers run this AFTER the ownership guard, so a genuinely invalid
@@ -2450,6 +2466,7 @@ def api_demo_progress(request: Request, board_slug: str):
     ``done/running/pending/blocked`` and ``progress`` is 100 only for a
     terminal task; nothing is fabricated.
     """
+    board_slug = _require_board_slug(board_slug)
     user = get_current_user_optional(request)
     if not board_slug.startswith("flux-demo-") and not (
             user and board_slug.startswith(f"u{user['id']}-")):
@@ -2500,6 +2517,7 @@ def api_demo_logs(request: Request, board_slug: str, task_id: str):
     Demo boards public; owned boards require the owner. Returns [] for a
     private/unknown task — never crashes on a missing DB row.
     """
+    board_slug = _require_board_slug(board_slug)
     user = get_current_user_optional(request)
     if not board_slug.startswith("flux-demo-") and not (
             user and board_slug.startswith(f"u{user['id']}-")):
@@ -2972,6 +2990,7 @@ def _swarm_payload(slug: str, goal: str, swarm) -> dict:
 def api_workspace(slug: str, user: dict = Depends(get_current_user)):
     # Same ownership rules as the task board: private boards require the owner,
     # demo boards are public showcase. Generated files are the user's "result".
+    slug = _require_board_slug(slug)
     if not slug.startswith(f"u{user['id']}-") and not slug.startswith("flux-demo-"):
         raise HTTPException(status_code=403, detail="Unauthorized")
     if not slug.startswith("flux-demo-") and not _board_exists(slug):
@@ -2994,6 +3013,7 @@ def api_workspace(slug: str, user: dict = Depends(get_current_user)):
 @app.post("/api/projects/{slug}/attachments")
 async def api_upload_attachment(slug: str, request: Request, file: UploadFile = File(...),
                                 user: dict = Depends(get_current_user)):
+    slug = _require_board_slug(slug)
     if not slug.startswith(f"u{user['id']}-"):
         audit.audit("project.attach", uid=user["id"], email=user["email"],
                     ip=_client_ip(request), outcome="fail", reason="unauthorized", slug=slug)
@@ -3015,6 +3035,7 @@ async def api_upload_attachment(slug: str, request: Request, file: UploadFile = 
 
 @app.get("/api/projects/{slug}/files")
 def api_project_files(slug: str, user: dict = Depends(get_current_user)):
+    slug = _require_board_slug(slug)
     if not slug.startswith(f"u{user['id']}-") and not slug.startswith("flux-demo-"):
         raise HTTPException(status_code=403, detail="Unauthorized")
     if not slug.startswith("flux-demo-") and not _board_exists(slug):
@@ -3030,6 +3051,7 @@ def api_project_files(slug: str, user: dict = Depends(get_current_user)):
 @app.delete("/api/projects/{slug}/attachments/{name}")
 def api_delete_attachment(slug: str, name: str, request: Request,
                           user: dict = Depends(get_current_user)):
+    slug = _require_board_slug(slug)
     if not slug.startswith(f"u{user['id']}-"):
         raise HTTPException(status_code=403, detail="Unauthorized")
     try:
@@ -3114,6 +3136,7 @@ def _export_bundle(slug: str) -> bytes:
 def api_project_export(slug: str, request: Request, user: dict = Depends(get_current_user)):
     # Same ownership rules as the workspace listing: demo boards are public
     # showcase; owned boards require the owner.
+    slug = _require_board_slug(slug)
     if not slug.startswith(f"u{user['id']}-") and not slug.startswith("flux-demo-"):
         audit.audit("project.export", uid=user["id"], email=user["email"], ip=_client_ip(request),
                     outcome="fail", reason="unauthorized", slug=slug)
@@ -3297,6 +3320,7 @@ def _preview_doc(request: Request, slug: str, relpath: str) -> Response:
 
 @app.get("/p/{slug}")
 def preview_redirect(request: Request, slug: str):
+    slug = _require_board_slug(slug)
     if not _preview_allowed(request, slug):
         return _preview_html(slug, 403, "Forbidden",
                              "Sign in to preview this board, or open a demo board.")
@@ -3305,6 +3329,7 @@ def preview_redirect(request: Request, slug: str):
 
 @app.get("/p/{slug}/")
 def preview_root(request: Request, slug: str):
+    slug = _require_board_slug(slug)
     if not _preview_allowed(request, slug):
         return _preview_html(slug, 403, "Forbidden",
                              "Sign in to preview this board, or open a demo board.")
@@ -3313,6 +3338,7 @@ def preview_root(request: Request, slug: str):
 
 @app.get("/p/{slug}/{rest:path}")
 def preview_path(request: Request, slug: str, rest: str):
+    slug = _require_board_slug(slug)
     if not _preview_allowed(request, slug):
         return _preview_html(slug, 403, "Forbidden",
                              "Sign in to preview this board, or open a demo board.")
@@ -3325,6 +3351,7 @@ def api_preview_ticket(slug: str, request: Request,
     """Issue a short-lived /p-only cookie so the dashboard can embed the user's
     preview in a sandboxed iframe (Bearer tokens in localStorage cannot travel
     with an iframe navigation). Demo boards need no ticket."""
+    slug = _require_board_slug(slug)
     if not slug.startswith(f"u{user['id']}-"):
         raise HTTPException(status_code=403, detail="Unauthorized")
     if not _board_exists(slug):
@@ -3341,6 +3368,7 @@ def api_preview_ticket(slug: str, request: Request,
 @app.get("/api/projects/{slug}/tasks")
 def api_tasks(slug: str, user: dict = Depends(get_current_user)):
     # Only allow if the board belongs to this user (prefix guard).
+    slug = _require_board_slug(slug)
     if not slug.startswith(f"u{user['id']}-") and not slug.startswith("flux-demo-"):
         raise HTTPException(status_code=403, detail="Unauthorized")
     if not slug.startswith("flux-demo-") and not _board_exists(slug):
@@ -3354,6 +3382,7 @@ def api_tasks(slug: str, user: dict = Depends(get_current_user)):
 @app.post("/api/projects/{slug}/dispatch")
 def api_dispatch(slug: str, request: Request, dry_run: bool = False,
                  user: dict = Depends(get_current_user)):
+    slug = _require_board_slug(slug)
     if not slug.startswith(f"u{user['id']}-") and not slug.startswith("flux-demo-"):
         raise HTTPException(status_code=403, detail="Unauthorized")
     if not slug.startswith("flux-demo-") and not _board_exists(slug):
@@ -3417,6 +3446,7 @@ def api_dispatch(slug: str, request: Request, dry_run: bool = False,
 @app.post("/api/projects/{slug}/reopen")
 def api_reopen_project(slug: str, request: Request,
                        user: dict = Depends(get_current_user)):
+    slug = _require_board_slug(slug)
     if not slug.startswith(f"u{user['id']}-"):
         audit.audit("project.reopen", uid=user["id"], email=user["email"],
                     ip=_client_ip(request), outcome="fail", reason="unauthorized", slug=slug)
@@ -4888,6 +4918,7 @@ def api_delete_custom_agent(aid: int, request: Request,
 # ---------- security (ECC AgentShield) ----------
 @app.get("/api/projects/{slug}/security")
 def api_security(slug: str, include_llm: bool = False, user: dict | None = Depends(get_current_user_optional)):
+    slug = _require_board_slug(slug)
     # Demo boards are public for showcasing; owned boards require the owner.
     if slug.startswith("flux-demo-"):
         pass
@@ -4914,6 +4945,14 @@ async def ws_board(websocket: WebSocket, slug: str):
     #   2. Malformed/unsigned token -> reject (do NOT treat as anonymous).
     #   3. Token uid maps to a deleted user -> reject (user-existence check).
     #   4. slug not owned by the user (and not a demo board) -> reject.
+    #   5. slug/format-traversal -> reject before accept (encoded ``../`` must
+    #      never reach the board store path builders, which prefix guards would
+    #      otherwise let through).
+    if not slug or len(slug) > 120 or not _SLUG_FORMAT_RE.match(slug):
+        await websocket.accept()
+        await websocket.send_json({"type": "error", "detail": "invalid-slug"})
+        await websocket.close()
+        return
     token = websocket.query_params.get("token")
     if not token:
         await websocket.accept()
