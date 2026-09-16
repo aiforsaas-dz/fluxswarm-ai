@@ -991,7 +991,7 @@ def _seed_project_workspace(ws: Path, goal: str) -> None:
         "OBJECTIVE:\n"
         f"{goal}\n\n"
         "The eight lanes below each produce a REAL artifact in this directory:\n"
-        "PLAN.md, ARCHITECTURE.md, Dockerfile, tests/test_app.py, REVIEW.md,\n"
+        "PLAN.md, ARCHITECTURE.md, DEVOPS.md, tests/test_app.py, REVIEW.md,\n"
         "DESIGN.md, AUDIT.md, and the final deliverable (README.md, the project\n"
         "code file, or a single self-contained index.html when the objective is a\n"
         "website/web app/landing page).\n"

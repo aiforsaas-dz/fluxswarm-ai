@@ -248,7 +248,7 @@ def test_builder_token_budget_scales_with_web_goals():
     assert demo_llm.lane_max_tokens("a landing page", None) > 400
     # The Planner lane gets a dedicated budget large enough for the full
     # EXECUTABLE plan (requirements/tasks/acceptance criteria + traceability),
-    # above the lean arch/devops/tdd/review doc cap.
+    # above the lean review doc cap (arch/devops/design/tdd have their own).
     assert demo_llm.lane_max_tokens("a CLI tool", "PLAN.md") \
         == demo_llm._PLAN_MAX_TOKENS
     assert demo_llm.lane_max_tokens("a CLI tool", "PLAN.md") \

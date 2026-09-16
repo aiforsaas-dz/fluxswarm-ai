@@ -184,7 +184,7 @@ def test_bg_thin_project_drives_all_eight_lanes_in_order(monkeypatch, tmp_path):
                     "ecc-build-fixer", "ecc-auditor"]
     assert [r["task_id"] for r in ran] == [by_role[a] for a in expect_order]
     assert [r["artifact_name"] for r in ran] == [
-        "PLAN.md", "ARCHITECTURE.md", "Dockerfile",
+        "PLAN.md", "ARCHITECTURE.md", "DEVOPS.md",
         "tests/test_app.py", "REVIEW.md", "DESIGN.md",
         "deliverable.md", "AUDIT.md"]
     assert all(r["board"] == "u1-drive" for r in ran)
@@ -340,7 +340,7 @@ def test_completion_does_not_retry_401(monkeypatch):
 def test_read_workspace_includes_suffix_less_artifacts(monkeypatch, tmp_path):
     """A thin lane writes real artifacts into the project workspace; the served
     workspace view must include extension-less project files like Dockerfile
-    (the DevOps lane's real deliverable), not just .md/.py files."""
+    (an extra deliverable the builder may still emit), not just .md/.py files."""
     _host(monkeypatch, tmp_path)
     ws = hc.project_workspace_dir("u1-ws")
     ws.mkdir(parents=True)

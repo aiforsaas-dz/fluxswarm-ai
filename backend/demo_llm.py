@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
@@ -36,7 +37,7 @@ _COMPLEX_EXTRA_TOKENS = int(os.environ.get("FLUXSWARM_COMPLEX_BUILDER_EXTRA_TOKE
 _COMPLEX_MAX_TOKENS = int(os.environ.get("FLUXSWARM_COMPLEX_BUILDER_MAX_TOKENS", "12000"))
 # Generic (non-web) build deliverables (app.py, README.md, …) get an upgraded
 # dedicated budget so real project code comes back COMPLETE, not truncated.
-# The short plan/arch/devops/tdd/review lanes keep the lean default.
+# The reviewer doc lane keeps the lean default.
 _DELIVERABLE_MAX_TOKENS = int(os.environ.get("FLUXSWARM_DELIVERABLE_MAX_TOKENS", "2400"))
 _NORMAL_MAX_TOKENS = 800
 # The Planner lane (PLAN.md) now emits a full EXECUTABLE implementation plan
@@ -52,6 +53,18 @@ _PLAN_MAX_TOKENS = int(os.environ.get("FLUXSWARM_PLAN_MAX_TOKENS", "2400"))
 _ARCH_MAX_TOKENS = int(os.environ.get("FLUXSWARM_ARCH_MAX_TOKENS", "2400"))  # (Phase 9)
 # The Designer lane (DESIGN.md) emits an EXECUTABLE visual design system: exact palette hexes, type scale, spacing/radius/shadow tokens, per-component styling rules with concrete paths + interfaces + data flow, responsive + interaction states + accessibility. It needs the same dedicated headroom the executable Planner/Architect lanes got. Default 2400, env-tunable.
 _DESIGN_MAX_TOKENS = int(os.environ.get("FLUXSWARM_DESIGN_MAX_TOKENS", "2400"))
+# The DevOps lane (DEVOPS.md) emits an EXECUTABLE deployment blueprint: pinned
+# reproducible build, dependency/lockfile correctness, env configuration,
+# build/start scripts, health checks, CI/CD, deployment impact. It needs the
+# same dedicated headroom the executable Planner/Architect/Designer lanes got.
+# Default 2400, env-tunable.
+_DEVOPS_MAX_TOKENS = int(os.environ.get("FLUXSWARM_DEVOPS_MAX_TOKENS", "2400"))
+# The TDD lane (tests/test_app.py) emits an EXECUTABLE pytest blueprint: a
+# grep/ast-valid Python test file whose embedded _CONTRACT declares the focused
+# cases (id T-n + name + target + concrete assertion), consistency, keys, and
+# decisions AT-n. It needs dedicated headroom so a fresh run rebuilds the same
+# deterministic test suite. Default 2400, env-tunable.
+_TDD_MAX_TOKENS = int(os.environ.get("FLUXSWARM_TDD_MAX_TOKENS", "2400"))
 
 
 # Demo builder budget: big enough for a complete single-file page but small
@@ -302,10 +315,9 @@ def demo_builder_max_tokens(objective: str = "") -> int:
 
 
 def lane_max_tokens(objective: str, artifact_name: str | None) -> int:
-    """Per-lane token budget: the final deliverable gets the large budget;
-    the Planner's executable PLAN.md and the Architect's executable
-    ARCHITECTURE.md each keep their own dedicated budgets; the smaller
-    devops/tdd/review doc lanes keep the lean default."""
+    """Per-lane token budget: the final deliverable gets the large budget; the
+    executable Planner/Architect/Designer/DevOps/TDD lanes each keep their own
+    dedicated budgets; the remaining reviewer doc lane keeps the lean default."""
     if artifact_name is None:
         return builder_max_tokens(objective)
     name = (artifact_name or "").strip().lower()
@@ -315,6 +327,10 @@ def lane_max_tokens(objective: str, artifact_name: str | None) -> int:
         return _ARCH_MAX_TOKENS
     if name == "design.md":
         return _DESIGN_MAX_TOKENS
+    if name == "devops.md":
+        return _DEVOPS_MAX_TOKENS
+    if name == "tests/test_app.py":
+        return _TDD_MAX_TOKENS
     return _NORMAL_MAX_TOKENS
 
 
@@ -1468,27 +1484,508 @@ def architect_prompt(task_title: str, objective: str, plan: str = "",
     return json.dumps(blueprint, ensure_ascii=False, indent=2)
 def devops_prompt(task_title: str, objective: str, plan: str = "",
                   codebase_ctx: str = "") -> str:
-    return (
-        f"Task: {task_title}\n\n"
-        f"Objective: {objective}\n\n"
-        "Act as the DevOps engineer. Output ONLY a production-ready Dockerfile "
-        "(plain text, no markdown fences, no commentary) that would containerize "
-        "this project as a simple Python or static web service."
-        f"{_codebase_block(codebase_ctx)}\n"
-    )
+    """Deterministic executable DEVOPS.md blueprint: a single json.dumps of a
+    json.loads-able deployment contract (container/Docker build with pinned
+    base + lockfile, dependency correctness, environment config, build/start
+    scripts, health check, CI/CD, deployment target, reproducible clean build,
+    consistency, reproducibility, keys, decisions DD-n with rationale). No
+    prose, no fences, json.loads()-able, so the Builder can machine-validate
+    it. Mirrors the executable Planner/Architect/Designer lanes (Phase 10)."""
+    web = _is_web_objective(objective)
+    if web:
+        deploy_note = (
+            "the deployment target hosts the same-origin web app + API; "
+            "the container MUST keep the built web assets into the image and "
+            "serve them from the same origin as the API"
+        )
+    else:
+        deploy_note = (
+            "the containerization is for a CLI / library / API process; "
+            "no web-asset step or static serving is required"
+        )
+    blueprint = {
+        "decisions": [
+            {"id": "DD-1",
+             "title": "Reproducible, pinned, health-checked container",
+             "rationale": "pin the base image + dependency lockfile so a "
+                          "fresh install builds the same artifact; expose a "
+                          "health check so orchestration can probe it"},
+        ],
+        "components": [
+            {"id": "DEV-1", "name": "container", "path": "Dockerfile",
+             "responsibility": "reproducible image: pinned base image + "
+                              "installed locked dependencies",
+             "interfaces": {"in": "requirements.lock + app code",
+                            "out": "runnable image / exposed port"},
+             "data_flow": "lockfile -> pip install -> image"},
+            {"id": "DEV-2", "name": "dependencies",
+             "path": "requirements.lock",
+             "responsibility": "pinned dependency versions (install the "
+                              "exact versions used + tested in CI)",
+             "interfaces": {"in": "requirements.in / tested versions",
+                            "out": "locked requirements"},
+             "data_flow": "tested versions -> lock -> fresh install"},
+            {"id": "DEV-3", "name": "environment", "path": ".env.example",
+             "responsibility": "documented env/config variables with "
+                              "non-secret defaults (secrets injected at "
+                              "runtime)",
+             "interfaces": {"in": "runtime config needs", "out": ".env"},
+             "data_flow": "env vars -> process config"},
+            {"id": "DEV-4", "name": "scripts", "path": "deploy/",
+             "responsibility": "build + start scripts so a fresh clone can "
+                              "build and run without manual steps",
+             "interfaces": {"in": "source tree", "out": "running service"},
+             "data_flow": "source -> build -> start"},
+            {"id": "DEV-5", "name": "health-check", "path": "/health",
+             "responsibility": "probeable health endpoint or check so the "
+                              "platform can confirm readiness",
+             "interfaces": {"in": "started service", "out": "200/ok"},
+             "data_flow": "liveness probe -> /health -> 200"},
+            {"id": "DEV-6", "name": "ci-cd", "path": ".github/workflows/ci.yml",
+             "responsibility": "CI runs the test suite on the locked deps and "
+                              "CD deploys the built image",
+             "interfaces": {"in": "pushed code", "out": "tested + deployed"},
+             "data_flow": "push -> test -> build -> deploy"},
+            {"id": "DEV-7", "name": "deployment",
+             "path": "render.yaml / compose/deploy config",
+             "responsibility": "declared deployment target so the host knows "
+                              "how to run + probe the service",
+             "interfaces": {"in": "built image", "out": "running deployment"},
+             "data_flow": "image -> platform config -> live service"},
+        ],
+        "build": [
+            "pinned base image (python:3.11-slim or newer, version-pinned)",
+            "install from requirements.lock with --no-cache-dir",
+            "non-root runtime user where the base allows",
+            "expose the service port; keep image small (no dev deps)",
+        ],
+        "health_check": ["GET /health returns 2xx with health state"],
+        "ci_cd": [
+            "CI installs the locked deps and runs the full test suite",
+            "CI builds the container to prove a clean reproducible build",
+            "CD deploys the built image on the declared target",
+        ],
+        "deployment_target": deploy_note,
+        "consistency": [
+            "Dockerfile, lockfile, CI and deploy config all agree on the "
+            "same Python/runtime version and the same port",
+        ],
+        "reproducibility": [
+            "fresh clone + docker build uses only the lockfile (no "
+            "unpinned or floating requirements)",
+            "fresh install, container build, container start, and /health "
+            "probe all pass from a clean tree",
+        ],
+        "keys": [
+            "DEVOPS.md", "Dockerfile", "requirements.lock", ".env.example",
+            "deploy/", ".github/workflows/ci.yml",
+        ],
+    }
+    return json.dumps(blueprint, ensure_ascii=False, indent=2)
+
+
+def parse_devops(devops_text: str) -> dict:
+    """Tolerant parse of the DEVOPS.md executable blueprint: strips markdown
+    fences / prose and json.loads; {} on any failure so callers never crash."""
+    return parse_arch(devops_text)
+
+
+def devops_section(devops_text: str, key: str):
+    """Named section of the deployment contract (components / build /
+    health_check / ci_cd / deployment_target / consistency / reproducibility /
+    keys / decisions)."""
+    obj = parse_devops(devops_text)
+    v = obj.get(key) if obj else None
+    if isinstance(v, dict):
+        return [v]
+    if isinstance(v, list):
+        return list(v)
+    return []
+
+
+def devops_components(devops_text: str) -> list[dict]:
+    return list(devops_section(devops_text, "components"))
+
+
+def devops_component_paths(devops_text: str) -> set[str]:
+    return {str(c.get("path", "")).strip()
+            for c in devops_components(devops_text)
+            if str(c.get("path", "")).strip()}
+
+
+def devops_build(devops_text: str) -> list[str]:
+    return [str(x).strip() for x in devops_section(devops_text, "build")
+            if str(x).strip()]
+
+
+def devops_health_check(devops_text: str) -> list[str]:
+    return [str(x).strip() for x in devops_section(devops_text, "health_check")
+            if str(x).strip()]
+
+
+def devops_ci_cd(devops_text: str) -> list[str]:
+    return [str(x).strip() for x in devops_section(devops_text, "ci_cd")
+            if str(x).strip()]
+
+
+def devops_consistency(devops_text: str) -> list[str]:
+    return [str(x).strip() for x in devops_section(devops_text, "consistency")
+            if str(x).strip()]
+
+
+def devops_reproducibility(devops_text: str) -> list[str]:
+    return [str(x).strip()
+            for x in devops_section(devops_text, "reproducibility")
+            if str(x).strip()]
+
+
+def devops_keys(devops_text: str) -> list[str]:
+    return [str(x).strip() for x in devops_section(devops_text, "keys")
+            if str(x).strip()]
+
+
+def devops_decisions(devops_text: str) -> list[dict]:
+    return list(devops_section(devops_text, "decisions"))
+
+
+def devops_executable_issues(devops_text: str) -> list[str]:
+    """Deterministic validation of the DEVOPS.md executable blueprint.
+    Returns the ordered list of violations (empty === executable):
+    * parseable JSON blueprint;
+    * components present, each with a concrete 'path' + responsibility +
+      interfaces (in/out) + data_flow;
+    * build steps present and concrete (pinned base, lockfile install);
+    * health_check present and concrete (an endpoint answering 2xx);
+    * ci_cd present and concrete (tests + build + deploy);
+    * consistency / reproducibility / keys non-empty and concrete;
+    * every decisions entry has an id (DD-n) + title + rationale;
+    * no DD-n / DEV-n reference points at an undefined component / decision."""
+    issues: list[str] = []
+    obj = parse_devops(devops_text)
+    if not obj:
+        return ["devops is not a parseable JSON blueprint"]
+    comps = devops_components(devops_text)
+    if not comps:
+        issues.append("devops has no components (no deployment targets)")
+    defined_ids = {str(c.get("id", "")).strip()
+                   for c in comps if str(c.get("id", "")).strip()}
+    for c in comps:
+        cid = str(c.get("id", "")).strip() or "<DEV-n>"
+        if not str(c.get("path", "")).strip():
+            issues.append(f"devops component {cid} has no concrete 'path'")
+        if not str(c.get("responsibility", "")).strip():
+            issues.append(f"devops component {cid} has no responsibility")
+        if not (c.get("interfaces") or []) or \
+           not str(c.get("data_flow", "")).strip():
+            issues.append(
+                f"devops component {cid} has no interfaces / data_flow")
+        for iface in ((c.get("interfaces") or []) if not
+                      isinstance(c.get("interfaces"), dict)
+                      else [c.get("interfaces")]):
+            if not str(iface.get("in", "")).strip() or \
+               not str(iface.get("out", "")).strip():
+                issues.append(
+                    f"devops component {cid} interface "
+                    f"{iface.get('name', '')} lacks in/out types")
+    if not devops_build(devops_text):
+        issues.append("devops has no build steps (nothing builds reproduceably)")
+    if not devops_health_check(devops_text):
+        issues.append("devops has no health check (nothing to probe)")
+    if not devops_ci_cd(devops_text):
+        issues.append("devops has no CI/CD steps (tests never gate deploys)")
+    if not devops_consistency(devops_text):
+        issues.append("devops has no consistency rules")
+    if not devops_reproducibility(devops_text):
+        issues.append("devops has no reproducibility steps")
+    if not devops_keys(devops_text):
+        issues.append("devops promises no deliverable keys")
+    for dec in devops_decisions(devops_text):
+        did = str(dec.get("id", "")).strip()
+        if not did or not str(dec.get("title", "")).strip() or \
+           not str(dec.get("rationale", "")).strip():
+            issues.append(
+                "devops decisions entry needs id (DD-n) + title + rationale")
+    # any DD-n / DEV-n token in the blueprint that isn't defined is undefined
+    defined_ids |= {str(d.get("id", "")).strip()
+                    for d in devops_decisions(devops_text)
+                    if str(d.get("id", "")).strip()}
+    ref_tokens = set()
+    for c in comps:
+        for chunk in [str(c.get("data_flow", "")),
+                      str(c.get("responsibility", "")),
+                      str(c.get("path", ""))]:
+            for tok in re.findall(r"\b(?:DD|DEV)-\d+\b", chunk):
+                ref_tokens.add(tok)
+        for iface in ((c.get("interfaces") or []) if not
+                      isinstance(c.get("interfaces"), dict)
+                      else [c.get("interfaces")]):
+            for chunk in [str(iface.get("in", "")), str(iface.get("out", ""))]:
+                for tok in re.findall(r"\b(?:DD|DEV)-\d+\b", chunk):
+                    ref_tokens.add(tok)
+        for chunk in devops_build(devops_text) + devops_health_check(
+                devops_text) + devops_ci_cd(devops_text) + \
+                devops_consistency(devops_text) + \
+                devops_reproducibility(devops_text):
+            for tok in re.findall(r"\b(?:DD|DEV)-\d+\b", chunk):
+                ref_tokens.add(tok)
+    for dec in devops_decisions(devops_text):
+        for chunk in [str(dec.get("title", "")), str(dec.get("rationale", ""))]:
+            for tok in re.findall(r"\b(?:DD|DEV)-\d+\b", chunk):
+                ref_tokens.add(tok)
+    for tok in sorted(ref_tokens, key=lambda t: (int(t.split("-")[1]), t)):
+        if tok not in defined_ids:
+            issues.append(
+                f"devops references undefined component/decision '{tok}'")
+    return issues
+
+
+def devops_is_executable(devops_text: str) -> bool:
+    return not devops_executable_issues(devops_text)
 
 
 def tdd_prompt(task_title: str, objective: str, brief: str = "",
                codebase_ctx: str = "") -> str:
+    """Deterministic executable TDD blueprint: a valid Python pytest file
+    (parsable by ast AND collectable) whose top-level _CONTRACT dict declares
+    the focused cases (each with id T-n + name + target + inputs + expected),
+    consistency, reproducibility, keys, and decisions AT-n with rationale.
+    No prose, no fences — json.loads()-able inside Python, so the Builder can
+    machine-validate it. Web objectives keep the web contract intact
+    (index.html#hero / #grid) exactly like the Planner/Architect/Designer
+    lanes; CLI / library / API objectives say web-contract preservation does
+    not apply (Phase 11)."""
+    web = _is_web_objective(objective)
+    contract = {
+        "decisions": [
+            {"id": "AT-1", "title": "Deterministic focused cases",
+             "rationale": "3-4 focused cases pin the core behavior with "
+                          "concrete inputs + expected outcomes so the Builder "
+                          "satisfies them deterministically."},
+        ],
+        "cases": (
+            [
+                {"id": "T-1", "name": "hero_renders",
+                 "target": "index.html#hero",
+                 "inputs": "served single-file page",
+                 "expected": "an element with id='hero' carries the promised "
+                             "headline content"},
+                {"id": "T-2", "name": "feature_grid_builds",
+                 "target": "index.html#grid",
+                 "inputs": "feature list",
+                 "expected": "the grid section renders promised feature ids"},
+                {"id": "T-3", "name": "styles_apply",
+                 "target": "index.html styles",
+                 "inputs": "page with palette/type tokens",
+                 "expected": "explicit CSS (not an inline-font placeholder)"},
+                {"id": "T-4", "name": "viewport_responsive",
+                 "target": "index.html head",
+                 "inputs": "mobile viewport",
+                 "expected": "a responsive viewport meta keeps the layout "
+                             "usable on small screens"},
+            ] if web else
+            [
+                {"id": "T-1", "name": "imports_clean",
+                 "target": "project entry module",
+                 "inputs": "fresh import",
+                 "expected": "module imports without error"},
+                {"id": "T-2", "name": "core_behavior_returns_expected",
+                 "target": "objective's core behavior",
+                 "inputs": "representative input",
+                 "expected": "the expected output is produced"},
+                {"id": "T-3", "name": "error_paths_handled",
+                 "target": "failure path",
+                 "inputs": "invalid input",
+                 "expected": "a clear error/result, no silent exception"},
+                {"id": "T-4", "name": "entrypoint_runs",
+                 "target": "CLI/library entrypoint",
+                 "inputs": "argv / direct call",
+                 "expected": "documented side effect happens exactly once"},
+            ]
+        ),
+        "consistency": [
+            "test functions map 1:1 to cases; 'target' names the concrete "
+            "module/path the builder must satisfy",
+        ],
+        "reproducibility": [
+            "a fresh run rebuilds the exact same _CONTRACT and case list",
+        ],
+        "keys": ["tests/test_app.py"],
+        "web_contract": (
+            "the web contract is intact: cases reference the promised ids "
+            "(index.html#hero, index.html#grid) so the page stays buildable "
+            "and the builder never improvises" if web else
+            "web-contract preservation does not apply (CLI / library / API "
+            "objective; the tests target behavior, not a web page)"
+        ),
+    }
+    contract_literal = json.dumps(contract, ensure_ascii=False, indent=2)
     return (
-        f"Task: {task_title}\n\n"
-        f"Objective: {objective}\n\n"
-        "Act as the TDD specialist. Output ONLY the Python source of a pytest "
-        "test suite (plain text, no markdown fences) with 3-6 focused tests for "
-        "the core behavior described in the objective. No commentary outside "
-        "the code."
-        f"{_codebase_block(codebase_ctx)}\n"
+        "# Phase 11: executable TDD blueprint.\n"
+        "# This file is deterministic, ast-parseable Python and pytest-"
+        "collectable.\n"
+        f"# Objective: {objective}\n\n"
+        f"_CONTRACT = {contract_literal}\n\n"
+        "import json\n\n\n"
+        "def _reload_contract():\n"
+        "    return _CONTRACT\n\n\n"
+        "def test_contract_is_dict():\n"
+        "    assert isinstance(_reload_contract(), dict)\n\n\n"
+        "def test_every_case_is_machine_parseable():\n"
+        "    for case in _reload_contract()['cases']:\n"
+        "        assert case['id'].startswith('T-')\n"
+        "        assert case['name'] and case['target']\n"
+        "        assert case['inputs'] and case['expected']\n\n\n"
+        "def test_contract_reproduces_identical_json():\n"
+        "    assert _reload_contract() == json.loads(json.dumps(_CONTRACT))\n\n\n"
+        "def test_decisions_have_rationale():\n"
+        "    for dec in _reload_contract()['decisions']:\n"
+        "        assert dec['id'].startswith('AT-')\n"
+        "        assert dec['title'] and dec['rationale']\n"
     )
+
+
+def parse_tdd(test_text: str) -> dict:
+    """Tolerant parse of the TDD pytest blueprint: read the top-level
+    `_CONTRACT = {...}` python dict literal via ast.literal_eval; {} on any
+    failure so callers never crash. Mirrors parse_arch for the other lanes."""
+    try:
+        tree = ast.parse(test_text)
+    except Exception:
+        return {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for tgt in node.targets:
+                if isinstance(tgt, ast.Name) and tgt.id == "_CONTRACT":
+                    try:
+                        val = ast.literal_eval(node.value)
+                    except Exception:
+                        return {}
+                    return val if isinstance(val, dict) else {}
+    return {}
+
+
+def tdd_section(test_text: str, key: str):
+    """Named section of the test contract (cases / consistency /
+    reproducibility / keys / decisions / web_contract)."""
+    obj = parse_tdd(test_text)
+    if not obj:
+        return []
+    v = obj.get(key)
+    if isinstance(v, dict):
+        return [v]
+    if isinstance(v, list):
+        return list(v)
+    return []
+
+
+def tdd_cases(test_text: str) -> list[dict]:
+    return list(tdd_section(test_text, "cases"))
+
+
+def tdd_case_paths(test_text: str) -> set[str]:
+    return {str(c.get("target", "")).strip()
+            for c in tdd_cases(test_text) if str(c.get("target", "")).strip()}
+
+
+def tdd_consistency(test_text: str) -> list[str]:
+    return [str(x).strip() for x in tdd_section(test_text, "consistency")
+            if str(x).strip()]
+
+
+def tdd_reproducibility(test_text: str) -> list[str]:
+    return [str(x).strip() for x in tdd_section(test_text, "reproducibility")
+            if str(x).strip()]
+
+
+def tdd_keys(test_text: str) -> list[str]:
+    return [str(x).strip() for x in tdd_section(test_text, "keys")
+            if str(x).strip()]
+
+
+def tdd_decisions(test_text: str) -> list[dict]:
+    return list(tdd_section(test_text, "decisions"))
+
+
+def tdd_test_function_names(test_text: str) -> list[str]:
+    """Module-level pytest functions ('def test_*') in the produced file —
+    the proof the blueprint is a collectable pytest suite."""
+    try:
+        tree = ast.parse(test_text)
+    except Exception:
+        return []
+    return [a.name for a in tree.body if isinstance(a, ast.FunctionDef)
+            and a.name.startswith("test")]
+
+
+def tdd_executable_issues(test_text: str) -> list[str]:
+    """Deterministic validation of the TDD executable blueprint. Returns the
+    ordered list of violations (empty === executable):
+    * the file is valid, ast-parseable Python (the evidence gate parses it);
+    * a top-level _CONTRACT dict is present and machine-parseable;
+    * focused cases are declared (each with id T-n + name + target + inputs +
+      expected) and are concrete;
+    * the file is a collectable pytest suite (module-level test functions);
+    * consistency / reproducibility / keys non-empty and concrete;
+    * decisions present, each with id (AT-n) + title + rationale;
+    * no T-n / AT-n token in the blueprint is referenced-but-undefined."""
+    issues: list[str] = []
+    try:
+        ast.parse(test_text)
+    except SyntaxError as exc:
+        return [f"tdd tests are not valid Python ({exc.msg or 'syntax error'})"]
+    obj = parse_tdd(test_text)
+    if not obj:
+        return ["tdd has no parseable _CONTRACT blueprint"]
+    cases = tdd_cases(test_text)
+    if not cases:
+        issues.append("tdd has no focused cases (nothing pins the behavior)")
+    defined_ids = {(c.get("id") or "").strip() for c in cases
+                   if str(c.get("id", "")).strip()}
+    for c in cases:
+        cid = str(c.get("id", "")).strip() or "<T-n>"
+        for field in ("name", "target", "inputs", "expected"):
+            if not str(c.get(field, "")).strip():
+                issues.append(f"case {cid} has no concrete '{field}'")
+    if not tdd_test_function_names(test_text):
+        issues.append("tdd file defines no test_* functions (not collectable)")
+    if not tdd_consistency(test_text):
+        issues.append("tdd has no consistency rules")
+    if not tdd_reproducibility(test_text):
+        issues.append("tdd has no reproducibility steps")
+    if not tdd_keys(test_text):
+        issues.append("tdd promises no deliverable keys")
+    for dec in tdd_decisions(test_text):
+        did = str(dec.get("id", "")).strip()
+        if not did or not str(dec.get("title", "")).strip() or \
+           not str(dec.get("rationale", "")).strip():
+            issues.append(
+                "tdd decisions entry needs id (AT-n) + title + rationale")
+    defined_ids |= {(d.get("id") or "").strip()
+                    for d in tdd_decisions(test_text)
+                    if str(d.get("id", "")).strip()}
+    ref_tokens = set()
+    for c in cases:
+        for chunk in [str(c.get("name", "")), str(c.get("target", "")),
+                      str(c.get("inputs", "")), str(c.get("expected", ""))]:
+            for tok in re.findall(r"\b(?:T|AT)-\d+\b", chunk):
+                ref_tokens.add(tok)
+    for chunk in tdd_consistency(test_text) + tdd_reproducibility(
+            test_text) + tdd_keys(test_text):
+        for tok in re.findall(r"\b(?:T|AT)-\d+\b", chunk):
+            ref_tokens.add(tok)
+    for dec in tdd_decisions(test_text):
+        for chunk in [str(dec.get("title", "")), str(dec.get("rationale", ""))]:
+            for tok in re.findall(r"\b(?:T|AT)-\d+\b", chunk):
+                ref_tokens.add(tok)
+    for tok in sorted(ref_tokens, key=lambda t: (int(t.split("-")[1]), t)):
+        if tok not in defined_ids:
+            issues.append(
+                f"tdd references undefined case/decision '{tok}'")
+    return issues
+
+
+def tdd_is_executable(test_text: str) -> bool:
+    return not tdd_executable_issues(test_text)
 
 
 def reviewer_prompt(task_title: str, objective: str, brief: str = "",

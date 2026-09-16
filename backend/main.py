@@ -940,7 +940,7 @@ def _ws_brief(root, limit: int = 2500) -> str:
     reviewer/builder lanes (the thin project's shared blackboard)."""
     root = Path(root)
     parts = []
-    for name in ("PLAN.md", "ARCHITECTURE.md", "Dockerfile",
+    for name in ("PLAN.md", "ARCHITECTURE.md", "DEVOPS.md",
                  "tests/test_app.py", "REVIEW.md", "DESIGN.md", "AUDIT.md"):
         p = root / name
         try:
@@ -1031,6 +1031,40 @@ def _record_arch_validation_note(slug: str, task_id: str, ws_root) -> None:
         pass
 
 
+def _record_devops_validation_note(slug: str, task_id: str, ws_root) -> None:
+    """Best-effort board note when the DevOps engineer's DEVOPS.md is not an
+    EXECUTABLE deployment blueprint (missing components/build/health check/
+    CI-CD/reproducibility/keys). The build still proceeds, but the board stays
+    honest about the deployment contract's executability. Never raises."""
+    try:
+        issues = demo_llm.devops_executable_issues(_doc(ws_root / "DEVOPS.md"))
+        if issues:
+            hc._insert_event(
+                slug, task_id, "note",
+                f"DevOps validation: {len(issues)} issue(s) — "
+                + "; ".join(issues[:3]))
+    except Exception:
+        pass
+
+
+def _record_tdd_validation_note(slug: str, task_id: str, ws_root) -> None:
+    """Best-effort board note when the TDD specialist's tests/test_app.py is
+    not an EXECUTABLE pytest blueprint (not valid Python, no _CONTRACT, cases
+    missing concrete fields, no collectable test functions). The build still
+    proceeds, but the board stays honest about the suite's executability.
+    Never raises."""
+    try:
+        text = _doc(ws_root / "tests" / "test_app.py")
+        issues = demo_llm.tdd_executable_issues(text)
+        if issues:
+            hc._insert_event(
+                slug, task_id, "note",
+                f"TDD validation: {len(issues)} issue(s) — "
+                + "; ".join(issues[:3]))
+    except Exception:
+        pass
+
+
 def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None = None,
                      custom_agents: list[dict] | None = None,
                      context_payload: dict | None = None) -> None:
@@ -1100,7 +1134,7 @@ def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None =
              lambda brief: demo_llm.planner_prompt(hc.SQUAD[0][2], goal, codebase_ctx=codebase_ctx)),
             ("ecc-architect", "ARCHITECTURE.md",
              lambda brief: demo_llm.architect_prompt(hc.SQUAD[1][2], goal, codebase_ctx=codebase_ctx)),
-            ("ecc-devops", "Dockerfile",
+            ("ecc-devops", "DEVOPS.md",
              lambda brief: demo_llm.devops_prompt(hc.SQUAD[2][2], goal, codebase_ctx=codebase_ctx)),
             ("ecc-tdd", "tests/test_app.py",
              lambda brief: demo_llm.tdd_prompt(hc.SQUAD[3][2], goal, codebase_ctx=codebase_ctx)),
@@ -1187,6 +1221,16 @@ def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None =
                     # blueprint; record (honestly, non-blocking) any
                     # consistency/path/reproducibility issues.
                     _record_arch_validation_note(slug, tid, ws_root)
+                if assignee == "ecc-devops":
+                    # Phase 10: the DevOps engineer must ship an EXECUTABLE
+                    # deployment blueprint; record (honestly, non-blocking) any
+                    # missing build/health-check/CI-CD/reproducibility pieces.
+                    _record_devops_validation_note(slug, tid, ws_root)
+                if assignee == "ecc-tdd":
+                    # Phase 11: the TDD specialist must ship an EXECUTABLE
+                    # pytest blueprint; record (honestly, non-blocking) any
+                    # non-Python / missing-contract/case issues.
+                    _record_tdd_validation_note(slug, tid, ws_root)
             if assignee == "ecc-reviewer":
                 # Evidence gate runs after Reviewer so the Builder only starts
                 # once the workspace holds a verified (deterministic) evidence
