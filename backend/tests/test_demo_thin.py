@@ -216,16 +216,15 @@ def test_builder_prompt_injects_design_spec():
 def test_designer_prompt_demands_concrete_system_for_web():
     web = demo_llm.designer_prompt("ecc-designer", "a landing page for a bakery",
                                    plan='{"sections": ["Menu", "About"]}')
-    assert "DESIGN.md" in web
-    assert "## Palette" in web
-    assert "## Tokens" in web
-    assert "## Type" in web
-    assert "system-ui" in web
-    assert "no external fonts/CDNs" in web
+    obj = json.loads(web)
+    assert "DESIGN.md" in obj["keys"]
+    assert obj["palette"]
+    assert obj["typography"]
+    assert "index.html#hero" in web
     # Non-web goals degrade to a short consistency note, never a visual system.
     cli = demo_llm.designer_prompt("ecc-designer", "build a CLI tool", plan="x")
-    assert "## Palette" not in cli
-    assert "SHORT note" in cli
+    assert "index.html#hero" not in cli
+    assert "web contract preservation does not apply" in cli
 
 
 def test_auditor_prompt_restates_qawithout_inventing():

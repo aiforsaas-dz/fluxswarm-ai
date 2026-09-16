@@ -1014,6 +1014,23 @@ def _record_plan_validation_note(slug: str, task_id: str, ws_root) -> None:
         pass
 
 
+def _record_arch_validation_note(slug: str, task_id: str, ws_root) -> None:
+    """Best-effort board note when the Architect's ARCHITECTURE.md is not an
+    EXECUTABLE architecture blueprint (components missing concrete paths,
+    interfaces without in/out, no consistency/reproducibility/keys). The build
+    still proceeds (arch_to_build tolerates any text), but the board stays
+    honest about the blueprint's executability. Never raises."""
+    try:
+        issues = demo_llm.arch_executable_issues(_doc(ws_root / "ARCHITECTURE.md"))
+        if issues:
+            hc._insert_event(
+                slug, task_id, "note",
+                f"Architecture validation: {len(issues)} issue(s) — "
+                + "; ".join(issues[:3]))
+    except Exception:
+        pass
+
+
 def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None = None,
                      custom_agents: list[dict] | None = None,
                      context_payload: dict | None = None) -> None:
@@ -1165,6 +1182,11 @@ def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None =
                     # Phase 7: the Planner must ship an EXECUTABLE plan; record
                     # (honestly, non-blocking) any schema/traceability issues.
                     _record_plan_validation_note(slug, tid, ws_root)
+                if assignee == "ecc-architect":
+                    # Phase 8: the Architect must ship an EXECUTABLE architecture
+                    # blueprint; record (honestly, non-blocking) any
+                    # consistency/path/reproducibility issues.
+                    _record_arch_validation_note(slug, tid, ws_root)
             if assignee == "ecc-reviewer":
                 # Evidence gate runs after Reviewer so the Builder only starts
                 # once the workspace holds a verified (deterministic) evidence

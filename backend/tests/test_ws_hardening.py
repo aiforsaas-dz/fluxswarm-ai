@@ -99,9 +99,14 @@ def test_ws_ghost_owned_board_rejected_without_polling(monkeypatch):
     a = _register("ws-ghost@fluxswarm.test")
     slug = f"u{a['user']['id']}-never-created"
     calls = []
-    monkeypatch.setattr(main_mod.hc, "list_tasks", lambda s: calls.append(s) or [])
+    monkeypatch.setattr(main_mod.hc, "list_tasks", lambda s: [])
     assert _ws_reject_detail(f"/ws/{slug}?token={a['token']}") == "not-found"
-    assert calls == [], "a missing board must never be polled"
+    # Other boards' sockets may still be polling from earlier tests in this
+    # process; only THIS missing board must never be polled.
+    monkeypatch.setattr(main_mod.hc, "list_tasks", lambda s: calls.append(s) or [])
+    mono = _ws_reject_detail(f"/ws/{slug}?token={a['token']}")
+    assert mono == "not-found"
+    assert [c for c in calls if c == slug] == [], "a missing board must never be polled"
 
 
 # ---------- per-(user, slug) cap ----------

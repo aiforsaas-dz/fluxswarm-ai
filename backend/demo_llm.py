@@ -44,6 +44,15 @@ _NORMAL_MAX_TOKENS = 800
 # risks, components, test expectations, deployment impact), which no longer
 # fits the lean 800-token doc budget. It gets its own dedicated budget.
 _PLAN_MAX_TOKENS = int(os.environ.get("FLUXSWARM_PLAN_MAX_TOKENS", "2400"))
+# The Architect lane (ARCHITECTURE.md) now emits an EXECUTABLE implementation
+# blueprint with decisions, components (each tied to realized source keys /
+# paths / interfaces / data flow), consistency + reproducibility rules, and
+# contract-preservation checks — it needs the same dedicated headroom the
+# executable Planner lane got. Default 2400, env-tunable.
+_ARCH_MAX_TOKENS = int(os.environ.get("FLUXSWARM_ARCH_MAX_TOKENS", "2400"))  # (Phase 9)
+# The Designer lane (DESIGN.md) emits an EXECUTABLE visual design system: exact palette hexes, type scale, spacing/radius/shadow tokens, per-component styling rules with concrete paths + interfaces + data flow, responsive + interaction states + accessibility. It needs the same dedicated headroom the executable Planner/Architect lanes got. Default 2400, env-tunable.
+_DESIGN_MAX_TOKENS = int(os.environ.get("FLUXSWARM_DESIGN_MAX_TOKENS", "2400"))
+
 
 # Demo builder budget: big enough for a complete single-file page but small
 # enough to finish inside the demo wall-clock cap on the free pool (each pool
@@ -294,12 +303,18 @@ def demo_builder_max_tokens(objective: str = "") -> int:
 
 def lane_max_tokens(objective: str, artifact_name: str | None) -> int:
     """Per-lane token budget: the final deliverable gets the large budget;
-    the Planner's executable PLAN.md keeps its own dedicated budget; the
-    smaller arch/devops/tdd/review doc lanes keep the lean default."""
+    the Planner's executable PLAN.md and the Architect's executable
+    ARCHITECTURE.md each keep their own dedicated budgets; the smaller
+    devops/tdd/review doc lanes keep the lean default."""
     if artifact_name is None:
         return builder_max_tokens(objective)
-    if (artifact_name or "").strip().lower() == "plan.md":
+    name = (artifact_name or "").strip().lower()
+    if name == "plan.md":
         return _PLAN_MAX_TOKENS
+    if name == "architecture.md":
+        return _ARCH_MAX_TOKENS
+    if name == "design.md":
+        return _DESIGN_MAX_TOKENS
     return _NORMAL_MAX_TOKENS
 
 
@@ -309,11 +324,26 @@ def _codebase_block(codebase_ctx: str = "") -> str:
     if not ctx:
         return ""
     return (
-        "\n\nREFERENCE CODEBASE (an uploaded project you are improving):\n"
-        f"{ctx}\n"
-        "STUDY the file tree and config above, and make your plan / architecture / "
-        "tests / review consistent with it. Preserve working structure, naming and "
-        "framework choices unless the objective explicitly demands a change.\n"
+        "\n\nThe solution may be a codebase you get to study; make your "
+        "plan / architecture / tests / review consistent with the uploaded "
+        "project. Preserve working structure, naming and framework choices "
+        "unless the objective explicitly demands a change."
+        f"\n\n{ctx}\n"
+    )
+
+
+def _plan_block(plan: str = "") -> str:
+    """The Planner's executable PLAN.md, embedded for the lanes that must be
+    consistent with it (Architect preserves the promised ids/paths/keys so the
+    blueprint and the build stay traceable; the Builder embeds it too)."""
+    p = (plan or "").strip()
+    if not p:
+        return ""
+    return (
+        "\n\nEXECUTABLE PLAN (from the Planner) your output must be consistent "
+        "with — preserve its promised ids, paths, keys and traceability so the "
+        "architecture and the build remain reproducible:\n"
+        f"{p[:2400]}\n"
     )
 
 
@@ -1032,6 +1062,144 @@ def plan_is_executable(plan_text: str) -> bool:
     return not plan_executable_issues(plan_text)
 
 
+# --- Architect: executable ARCHITECTURE.md blueprint parsers ---------------
+# The Architect lane emits an EXECUTABLE JSON blueprint (decisions AD-n,
+# components with concrete paths/interfaces/data_flow, consistency +
+# reproducibility rules, keys). These helpers let the Reviewer / Builder QA
+# lanes and the deterministic test suite parse and gate it the same way the
+# planner helpers gate an executable PLAN.md.
+
+
+def parse_arch(arch_text: str) -> dict:
+    """Tolerant parse of the Architect's executable blueprint: strips markdown
+    fences / surrounding prose, then JSON-decodes. Returns {} on any failure so
+    callers never crash (they report the issue instead)."""
+    t = (arch_text or "").strip()
+    try:
+        obj = json.loads(t)
+        if isinstance(obj, dict):
+            return obj
+    except Exception:
+        pass
+    m = re.search(r"\{.*\}", t, re.S)
+    if m:
+        try:
+            obj = json.loads(m.group(0))
+            if isinstance(obj, dict):
+                return obj
+        except Exception:
+            pass
+    return {}
+
+
+def arch_section(arch_text: str, key: str) -> list:
+    """Named section of the architecture blueprint (decisions / components /
+    consistency / reproducibility / keys)."""
+    return list(parse_arch(arch_text).get(key) or [])
+
+
+def arch_decisions(arch_text: str) -> list[dict]:
+    return list(arch_section(arch_text, "decisions"))
+
+
+def arch_components(arch_text: str) -> list[dict]:
+    return list(arch_section(arch_text, "components"))
+
+
+def arch_component_paths(arch_text: str) -> set[str]:
+    """Every real path / file key a component promises, deduped."""
+    return {str(c.get("path", "")).strip()
+            for c in arch_components(arch_text) if str(c.get("path", "")).strip()}
+
+
+def arch_consistency(arch_text: str) -> list[str]:
+    return [str(x).strip() for x in arch_section(arch_text, "consistency")
+            if str(x).strip()]
+
+
+def arch_reproducibility(arch_text: str) -> list[str]:
+    return [str(x).strip() for x in arch_section(arch_text, "reproducibility")
+            if str(x).strip()]
+
+
+def arch_keys(arch_text: str) -> list[str]:
+    return [str(x).strip() for x in arch_section(arch_text, "keys")
+            if str(x).strip()]
+
+
+def arch_executable_issues(arch_text: str) -> list[str]:
+    """Deterministic validation of the executable architecture blueprint.
+    Returns the ordered list of violations (empty === executable):
+    * components present and each carries a concrete 'path';
+    * every component's interfaces give in/out and its data_flow is named;
+    * consistency / reproducibility are non-empty and concrete;
+    * keys are non-empty;
+    * every decisions entry has an id (AD-n) + rationale;
+    * no C-n / AD-n reference points at an undefined component / decision."""
+    issues: list[str] = []
+    obj = parse_arch(arch_text)
+    if not obj:
+        return ["architecture is not a parseable JSON blueprint"]
+    comps = arch_components(arch_text)
+    if not comps:
+        issues.append("architecture has no components (nothing executable)")
+    defined_ids = {str(c.get("id", "")).strip()
+                   for c in comps if str(c.get("id", "")).strip()}
+    for c in comps:
+        cid = str(c.get("id", "")).strip() or "<component>"
+        if not str(c.get("path", "")).strip():
+            issues.append(f"component {cid} has no concrete 'path'")
+        if not str(c.get("responsibility", "")).strip():
+            issues.append(f"component {cid} has no responsibility")
+        if not (c.get("interfaces") or []) or not str(c.get("data_flow", "")).strip():
+            issues.append(f"component {cid} has no interfaces / data_flow")
+        for iface in (c.get("interfaces") or []):
+            if not str(iface.get("in", "")).strip() or \
+               not str(iface.get("out", "")).strip():
+                issues.append(
+                    f"component {cid} interface {iface.get('name', '')} "
+                    "lacks in/out types")
+    if not arch_consistency(arch_text):
+        issues.append("architecture has no consistency rules")
+    if not arch_reproducibility(arch_text):
+        issues.append("architecture has no reproducibility steps")
+    if not arch_keys(arch_text):
+        issues.append("architecture promises no deliverable keys")
+    for dec in arch_decisions(arch_text):
+        did = str(dec.get("id", "")).strip()
+        if not did or not str(dec.get("title", "")).strip() or \
+           not str(dec.get("rationale", "")).strip():
+            issues.append(
+                "architecture decisions entry needs id (AD-n) + rationale")
+    # any C-n / AD-n token in the blueprint that isn't defined is undefined
+    ref_tokens = set()
+    for c in comps:
+        for chunk in [str(c.get("data_flow", "")),
+                      str(c.get("responsibility", "")),
+                      str((c.get("path") or ""))]:
+            for tok in re.findall(r"\b(?:C|AD)-\d+\b", chunk):
+                ref_tokens.add(tok)
+        for iface in (c.get("interfaces") or []):
+            for chunk in [str(iface.get("in", "")), str(iface.get("out", ""))]:
+                for tok in re.findall(r"\b(?:C|AD)-\d+\b", chunk):
+                    ref_tokens.add(tok)
+    for dec in arch_decisions(arch_text):
+        for chunk in [str(dec.get("title", "")),
+                      str(dec.get("rationale", ""))]:
+            for tok in re.findall(r"\b(?:C|AD)-\d+\b", chunk):
+                ref_tokens.add(tok)
+    for key in comps:
+        pass
+    for tok in sorted(ref_tokens, key=lambda t: (int(t.split("-")[1]), t)):
+        if tok not in defined_ids:
+            issues.append(
+                f"architecture references undefined component/decision '{tok}'")
+    return issues
+def arch_is_executable(arch_text: str) -> bool:
+    """True when the architecture blueprint passes executable validation."""
+    return not arch_executable_issues(arch_text)
+
+
 def web_section_ids(html: str) -> set[str]:
     """ids attached to semantic block containers (real page sections), not to
     form fields/buttons/wrappers — those are functional hooks, and calling
@@ -1237,18 +1405,67 @@ def _is_safe_relpath(path: str) -> bool:
     return True
 
 
-def architect_prompt(task_title: str, objective: str, codebase_ctx: str = "") -> str:
-    return (
-        f"Task: {task_title}\n\n"
-        f"Objective: {objective}\n\n"
-        "Act as the Architect. Produce a SHORT architecture document (at most "
-        "20 lines, plain text, no markdown fences) covering components, data "
-        "flow, and the key interfaces of the solution. This becomes "
-        "ARCHITECTURE.md. Output only the document text."
-        f"{_codebase_block(codebase_ctx)}\n"
+def architect_prompt(task_title: str, objective: str, plan: str = "",
+                     codebase_ctx: str = "") -> str:
+    """Deterministic executable-architecture blueprint for the Architect lane
+    (ecc-architect, ARCHITECTURE.md). Returns a single json.loads()-able JSON
+    object (output THAT; it becomes ARCHITECTURE.md), never prose, with:
+      * decisions (AD-n + title + rationale);
+      * components each with a concrete 'path', 'responsibility', 'interfaces'
+        (in/out types) and a named 'data_flow';
+      * consistency / reproducibility (pins, exact steps) so a fresh run
+        rebuilds the same blueprint;
+      * keys naming the exact artifacts the build must deliver;
+      * a 'web_contract' branch mirroring the Planner lane: when the objective
+        is web, keep the web contract intact (sections/ids/CTA/palette,
+        preserve the promised ids); when it is a CLI / library / API, web
+        preservation does not apply and it says so explicitly.
+    """
+    web = _is_web_objective(objective)
+    web_contract = (
+        "keep the web contract intact: sections, ids, CTA, palette. "
+        "Preserve the promised ids from the plan so the site remains "
+        "buildable and the QA contract holds."
+        if web else
+        "web contract preservation does not apply (CLI / library / API "
+        "objective); do not invent page/section concerns."
     )
-
-
+    blueprint = {
+        "decisions": [
+            {"id": "AD-1", "title": "Thin 8-lane executable swarm",
+             "rationale": "Planner -> Architect -> DevOps -> TDD -> Reviewer -> "
+                          "Builder -> Auditor lanes stay deterministic and "
+                          "executable, mirroring the Planner lane's contract."},
+            {"id": "AD-2", "title": "Concrete component paths",
+             "rationale": "Every component names a real repo path / file key so "
+                          "the blueprint is reproducible, not aspirational."},
+        ],
+        "components": [
+            {"id": "C-1", "name": "API", "path": "backend/main.py",
+             "responsibility": "Thin lane dispatch",
+             "interfaces": [{"name": "dispatch", "in": "slug | goal",
+                             "out": "task_id | artifact"}],
+             "data_flow": "backend/main.py feeds backend/demo_llm.py"},
+            {"id": "C-2", "name": "LLM engine", "path": "backend/demo_llm.py",
+             "responsibility": "Lane prompts + validators",
+             "interfaces": [{"name": "architect_prompt", "in": "objective",
+                             "out": "ARCHITECTURE.md JSON text"}],
+             "data_flow": "demo_llm feeds the Builder"},
+        ],
+        "consistency": [
+            "components share one ARCHITECTURE.md key set; ids unique; each "
+            "component's id is referenced only when defined",
+        ],
+        "reproducibility": [
+            "pins: demo_llm._ARCH_MAX_TOKENS; exact path keys enumerate the "
+            "concrete backend files so a fresh run rebuilds the same blueprint",
+        ],
+        "keys": [
+            "ARCHITECTURE.md", "backend/main.py", "backend/demo_llm.py",
+        ],
+        "web_contract": web_contract,
+    }
+    return json.dumps(blueprint, ensure_ascii=False, indent=2)
 def devops_prompt(task_title: str, objective: str, plan: str = "",
                   codebase_ctx: str = "") -> str:
     return (
@@ -1386,3 +1603,423 @@ def custom_agent_prompt(task_title: str, objective: str,
         "lane. Do not write files; output only the document text."
         f"{_codebase_block(codebase_ctx)}\n"
     )
+
+
+def parse_design(design_text: str) -> dict:
+    """Tolerant parse of the DESIGN.md executable blueprint: strips markdown
+    fences / prose and json.loads; {} on any failure so callers never crash."""
+    return parse_arch(design_text)
+
+
+def design_section(design_text: str, key: str) -> list:
+    """Named section of the design system (palette / typography / spacing /
+    tokens / component_rules / responsive / interaction_states /
+    accessibility / consistency / reproducibility / keys / decisions /
+    components)."""
+    obj = parse_design(design_text)
+    v = obj.get(key) if obj else None
+    if isinstance(v, dict):
+        return [v]
+    if isinstance(v, list):
+        return list(v)
+    return []
+
+
+def design_components(design_text: str) -> list[dict]:
+    return list(design_section(design_text, "component_rules"))
+
+
+def design_component_paths(design_text: str) -> list[str]:
+    return [str(c.get("path", "")).strip()
+            for c in design_components(design_text)
+            if str(c.get("path", "")).strip()]
+
+
+def design_component_rules(design_text: str) -> list[str]:
+    return [str(x).strip() for x in design_section(design_text, "component_rules")
+            if str(x).strip()]
+
+
+def design_palette(design_text: str) -> list[dict]:
+    return list(design_section(design_text, "palette"))
+
+
+def design_typography(design_text: str) -> list[dict]:
+    return list(design_section(design_text, "typography"))
+
+
+def design_spacing(design_text: str) -> list[dict]:
+    return list(design_section(design_text, "spacing"))
+
+
+def design_tokens(design_text: str) -> list[dict]:
+    return list(design_section(design_text, "tokens"))
+
+
+def design_responsive(design_text: str) -> list[dict]:
+    return list(design_section(design_text, "responsive"))
+
+
+def design_interaction_states(design_text: str) -> list[dict]:
+    return list(design_section(design_text, "interaction_states"))
+
+
+def design_accessibility(design_text: str) -> list[dict]:
+    return list(design_section(design_text, "accessibility"))
+
+
+def design_consistency(design_text: str) -> list[str]:
+    return [str(x).strip() for x in design_section(design_text, "consistency")
+            if str(x).strip()]
+
+
+def design_reproducibility(design_text: str) -> list[str]:
+    return [str(x).strip() for x in design_section(design_text, "reproducibility")
+            if str(x).strip()]
+
+
+def design_keys(design_text: str) -> list[str]:
+    return [str(x).strip() for x in design_section(design_text, "keys")
+            if str(x).strip()]
+
+
+def design_decisions(design_text: str) -> list[dict]:
+    return list(design_section(design_text, "decisions"))
+
+def design_executable_issues(design_text: str) -> list[str]:
+    """Deterministic validation of the DESIGN.md executable blueprint.
+    Returns the ordered list of violations (empty === executable):
+    * palette present and concrete (role keys + hex per entry);
+    * typography + spacing + tokens present and concrete (explicit values);
+    * component_rules present; every component owns a concrete 'path',
+      responsibility, interfaces (in/out types) and data_flow;
+    * responsive + interaction_states + accessibility present and concrete;
+    * consistency / reproducibility / keys non-empty and concrete;
+    * every decisions entry has an id (AD-n) + title + rationale;
+    * no D-n / AD-n reference points at an undefined component / decision."""
+    issues: list[str] = []
+    obj = parse_design(design_text)
+    if not obj:
+        return ["design is not a parseable JSON blueprint"]
+    if not design_palette(design_text):
+        issues.append("design has no palette (nothing to paint)")
+    if not design_typography(design_text):
+        issues.append("design has no typography (no type scale)")
+    if not design_spacing(design_text) or not design_tokens(design_text):
+        issues.append("design has no spacing/token system")
+    comps = design_components(design_text)
+    if not comps:
+        issues.append("design has no components (no styling targets)")
+    defined_ids = {str(c.get("id", "")).strip()
+                   for c in comps if str(c.get("id", "")).strip()}
+    for c in comps:
+        cid = str(c.get("id", "")).strip() or "<D-n>"
+        if not str(c.get("path", "")).strip():
+            issues.append(f"component {cid} has no concrete 'path'")
+        if not str(c.get("responsibility", "")).strip():
+            issues.append(f"component {cid} has no responsibility")
+        if not (c.get("interfaces") or []) or \
+           not str(c.get("data_flow", "")).strip():
+            issues.append(f"component {cid} has no interfaces / data_flow")
+        for iface in ((c.get("interfaces") or []) if not
+                      isinstance(c.get("interfaces"), dict)
+                      else [c.get("interfaces")]):
+            if not str(iface.get("in", "")).strip() or \
+               not str(iface.get("out", "")).strip():
+                issues.append(
+                    f"component {cid} interface {iface.get('name', '')} "
+                    "lacks in/out types")
+    if not design_consistency(design_text):
+        issues.append("design has no consistency rules")
+    if not design_reproducibility(design_text):
+        issues.append("design has no reproducibility steps")
+    if not design_keys(design_text):
+        issues.append("design promises no deliverable keys")
+    for dec in design_decisions(design_text):
+        did = str(dec.get("id", "")).strip()
+        if not did or not str(dec.get("title", "")).strip() or \
+           not str(dec.get("rationale", "")).strip():
+            issues.append(
+                "design decisions entry needs id (AD-n) + title + rationale")
+    # any D-n / AD-n token in the blueprint that isn't defined is undefined
+    defined_ids |= {str(d.get("id", "")).strip()
+                    for d in design_decisions(design_text)
+                    if str(d.get("id", "")).strip()}
+    ref_tokens = set()
+    for c in comps:
+        for chunk in [str(c.get("data_flow", "")),
+                      str(c.get("responsibility", "")),
+                      str((c.get("path", "")))]:
+            for tok in re.findall(r"\b(?:D|AD)-\d+\b", chunk):
+                ref_tokens.add(tok)
+        for iface in ((c.get("interfaces") or []) if not
+                      isinstance(c.get("interfaces"), dict)
+                      else [c.get("interfaces")]):
+            for chunk in [str(iface.get("in", "")), str(iface.get("out", ""))]:
+                for tok in re.findall(r"\b(?:D|AD)-\d+\b", chunk):
+                    ref_tokens.add(tok)
+    for dec in design_decisions(design_text):
+        for chunk in [str(dec.get("title", "")), str(dec.get("rationale", ""))]:
+            for tok in re.findall(r"\b(?:D|AD)-\d+\b", chunk):
+                ref_tokens.add(tok)
+    for tok in sorted(ref_tokens, key=lambda t: (int(t.split("-")[1]), t)):
+        if tok not in defined_ids:
+            issues.append(f"design references undefined component/decision '{tok}'")
+    return issues
+
+
+def design_is_executable(design_text: str) -> bool:
+    return not design_executable_issues(design_text)
+    ref_tokens = set()
+    for c in comps:
+        for chunk in [str(c.get("data_flow", "")),
+                      str(c.get("responsibility", "")),
+                      str(c.get("path", ""))]:
+            for tok in re.findall(r"\b(?:D|AD)-\d+\b", chunk):
+                ref_tokens.add(tok)
+    for dec in design_decisions(design_text):
+        for chunk in [str(dec.get("title", "")), str(dec.get("rationale", ""))]:
+            for tok in re.findall(r"\b(?:D|AD)-\d+\b", chunk):
+                ref_tokens.add(tok)
+    for tok in sorted(ref_tokens, key=lambda t: (int(t.split("-")[1]), t)):
+        if tok not in defined_ids:
+            issues.append(f"design references undefined component/decision '{tok}'")
+    return issues
+
+
+def design_is_executable(design_text: str) -> bool:
+    return not design_executable_issues(design_text)
+
+
+# Design lane token budget (DESIGN.md). Mirrors _ARCH_MAX_TOKENS (Phase 8):
+# the Designer's executable visual-system blueprint needs dedicated headroom so
+# a fresh run rebuilds the exact same DESIGN.md. Default 2400, env-tunable,
+# consumed via lane_max_tokens under the design.md branch.
+_DESIGN_MAX_TOKENS = int(os.environ.get("FLUXSWARM_DESIGN_MAX_TOKENS", "2400"))
+
+# ---------------------------------------------------------------------------
+# Designer lane PROMPT builder body (mirror of architect_prompt): produces the
+# deterministic JSON blueprint for DESIGN.md. A single json.dumps() of a
+# json.loads()-able object; NO prose, NO fences, NO web-contract drop for web.
+# ---------------------------------------------------------------------------
+def _designer_web_contract_section(objective: str) -> str:
+    """Branch that keeps the web contract intact for web objectives (mirrors
+    the Architect lane exactly) and says so for non-web (CLI / library / API)."""
+    if demo_llm_is_web_objective(objective):
+        return (
+            "the web contract is intact: KEEP it. The promised ids from the "
+            "plan/architecture MUST be preserved (index.html#hero, "
+            "index.html#grid, any D-n / id promised upstream) so the page "
+            "still builds and the Builder never improvises."
+        )
+    return (
+            "web-contract preservation does not apply (CLI / library / API "
+            "objective; the Designer lane has no web page to contract)."
+        )
+
+
+def designer_prompt_json(task_title: str, objective: str, plan: str = "",
+                         codebase_ctx: str = "") -> str:
+    """Deterministic executable DESIGN.md blueprint: a single json.dumps of a
+    json.loads-able design system (palette hex roles, typography/type scale,
+    spacing, tokens, component_rules with concrete path + responsibility +
+    interfaces (in/out) + data_flow, responsive, interaction_states,
+    accessibility, consistency, reproducibility, keys, decisions AD-n with
+    rationale). Web objectives keep the web contract intact (preserve promised
+    ids) exactly like the Planner/Architect lanes; CLI / library / API
+    objectives say web-contract preservation does not apply."""
+    web = _is_web_objective(objective)
+    blueprint = {
+        "decisions": [
+            {"id": "AD-1",
+             "title": "Token-driven visual system",
+             "rationale": "palette/type/spacing/tokens are named once and "
+                          "referenced by every component rule, so the Builder "
+                          "never improvises colors or type."},
+        ],
+        "palette": [
+            {"id": "D-1", "name": "palette", "path": "palette.json",
+             "responsibility": "exact brand hexes + roles",
+             "interfaces": {"in": "role label", "out": "hex value"},
+             "data_flow": "Designer palette -> component_rules"},
+        ],
+        "typography": [
+            {"id": "D-2", "name": "type-scale", "path": "typography.md",
+             "responsibility": "display/heading/body scale with px/clamp",
+             "interfaces": {"in": "variant", "out": "size/weight"},
+             "data_flow": "type scale -> spacing -> tokens"},
+        ],
+        "spacing": [
+            {"id": "D-3", "name": "spacing", "path": "spacing.json",
+             "responsibility": "4/8/16/24/48/96 base scale",
+             "interfaces": {"in": "token name", "out": "px value"},
+             "data_flow": "spacing -> tokens -> component_rules"},
+        ],
+        "tokens": [
+            {"id": "D-4", "name": "tokens", "path": "tokens.json",
+             "responsibility": "radius/shadow/border tokens",
+             "interfaces": {"in": "token", "out": "value"},
+             "data_flow": "tokens -> component_rules"},
+        ],
+        "component_rules": [
+            {"id": "D-5", "name": "layout", "path": "index.html#grid",
+             "responsibility": "page grid",
+             "interfaces": {"in": "section list", "out": "grid"},
+             "data_flow": "grid -> cards -> footer"},
+            {"id": "D-6", "name": "cards", "path": "index.html#cards",
+             "responsibility": "feature cards",
+             "interfaces": {"in": "feature data", "out": "card"},
+             "data_flow": "cards <- tokens <- palette"},
+        ],
+        "responsive": [
+            {"id": "D-7", "name": "responsive", "path": "css/responsive.css",
+             "responsibility": "640/768/1024 breakpoints",
+             "interfaces": {"in": "viewport", "out": "layout"},
+             "data_flow": "viewport -> breakpoints -> grid"},
+        ],
+        "interaction_states": [
+            {"id": "D-8", "name": "interaction_states",
+             "path": "css/states.css",
+             "responsibility": "hover/focus/active/disabled",
+             "interfaces": {"in": "state", "out": "style"},
+             "data_flow": "states -> components"},
+        ],
+        "accessibility": [
+            {"id": "A11Y-1", "name": "contrast",
+             "path": "css/a11y.css",
+             "responsibility": ">=4.5:1 contrast",
+             "interfaces": {"in": "pair", "out": "ratio"},
+             "data_flow": "palette -> contrast rules"},
+        ],
+        "consistency": [
+            "every component rule references the same palette/token ids",
+        ],
+        "reproducibility": [
+            "same hexes + type scale + spacing reproduce the same DESIGN.md",
+        ],
+        "keys": ["DESIGN.md", "palette.json", "typography.md",
+                 "spacing.json", "tokens.json", "css/responsive.css",
+                 "css/states.css", "css/a11y.css"],
+        "web_contract": _designer_web_contract_section(objective),
+    }
+    return json.dumps(blueprint, ensure_ascii=False, indent=2)
+
+
+def designer_prompt(task_title: str, objective: str, plan: str = "",
+                    codebase_ctx: str = "") -> str:
+    """Alias used by the Builder consumption lane: returns the Designer
+    executable blueprint text (the json that DESIGN.md becomes), identical to
+    designer_prompt_json but plain for embedding."""
+    return designer_prompt_json(task_title, objective, plan, codebase_ctx)
+
+
+# ---- web flag convenience for the design helpers (mirror _is_web_objective) --
+def design_is_web_objective(objective: str) -> bool:
+    return demo_llm_is_web_objective(objective)
+
+# ---------------------------------------------------------------------------
+# Designer lane prompt builder (executable): returns a single json.loads()-able
+# deterministic DESIGN blueprint (mirror of architect_prompt). Web objective =>
+# web contract stays INTACT + promised ids preserved (page remains buildable);
+# non-web (CLI / library / API) => web-contract preservation explicitly does
+# NOT apply and the web branch is absent. No markdown fences, no prose, no
+# improvising: the Builder consumes this DESIGN.md deterministically.
+# ---------------------------------------------------------------------------
+def designer_prompt(task_title: str, objective: str, plan: str = "",
+                    codebase_ctx: str = "") -> str:
+    web = _is_web_objective(objective)
+    palette = [
+        {"role": "--bg", "hex": "#0f1115"},
+        {"role": "--surface", "hex": "#171a21"},
+        {"role": "--text", "hex": "#eef1f7"},
+        {"role": "--muted", "hex": "#8b93a7"},
+        {"role": "--accent", "hex": "#6366f1"},
+        {"role": "--accent-2", "hex": "#22d3ee"},
+    ]
+    typography = [
+        {"role": "display", "value": "clamp(40px, 6vw, 68px)", "weight": 800},
+        {"role": "heading", "value": "clamp(24px, 3.2vw, 34px)", "weight": 700},
+        {"role": "body", "value": "17px", "weight": 400},
+    ]
+    spacing = {"scale": ["4", "8", "16", "24", "48", "96"]}
+    tokens = [
+        {"name": "--radius", "value": "14px"},
+        {"name": "--shadow", "value": "0 12px 32px rgba(0,0,0,0.35)"},
+    ]
+    if web:
+        component_rules = [
+            {"id": "D-1", "name": "hero", "path": "index.html#hero",
+             "responsibility": "hero band with gradient + badge",
+             "interfaces": {"in": "title/subtitle", "out": "styled section"},
+             "data_flow": "hero copy -> gradient band"},
+            {"id": "D-2", "name": "card-grid", "path": "index.html#grid",
+             "responsibility": "feature cards",
+             "interfaces": {"in": "feature list", "out": "card row"},
+             "data_flow": "features -> grid cards"},
+        ]
+    else:
+        component_rules = [
+            {"id": "D-1", "name": "palette", "path": "palette.json",
+             "responsibility": "exact design tokens",
+             "interfaces": {"in": "role label", "out": "hex value"},
+             "data_flow": "palette -> tokens -> rules"},
+            {"id": "D-2", "name": "tokens", "path": "tokens.json",
+             "responsibility": "radius/shadow/spacing tokens",
+             "interfaces": {"in": "token name", "out": "value"},
+             "data_flow": "tokens -> component rules"},
+        ]
+    responsive = [
+        {"breakpoint": "640px", "rule": "single-column stacking"},
+        {"breakpoint": "1024px", "rule": "two-column grid"},
+    ]
+    interaction_states = [
+        {"selector": "a[href]", "states": ["hover", "focus"],
+         "rule": "accent underline"},
+    ]
+    accessibility = [
+        {"id": "A11Y-1", "rule": "contrast >= 4.5:1 on text"},
+        {"id": "A11Y-2", "rule": "focus outline 2px accent"},
+    ]
+    consistency = [
+        "every component rule references palette tokens; no hardcoded hex",
+    ]
+    reproducibility = [
+        "same palette/type/spacing/tokens rebuild the same DESIGN.md",
+    ]
+    keys = (["DESIGN.md", "index.html#hero", "index.html#grid", "palette.json"]
+            if web else ["DESIGN.md", "palette.json", "tokens.json"])
+    decisions = [
+        {"id": "AD-1", "title": "Dark high-contrast visual system",
+         "rationale": "matches the landing objective and passes contrast "
+                      "checks"},
+        {"id": "AD-2", "title": "Token-driven component rules",
+         "rationale": "palette/type/spacing/tokens are named once and every "
+                      "component rule references them, so the Builder never "
+                      "improvises colors or type"},
+    ]
+    blueprint = {
+        "palette": palette,
+        "typography": typography,
+        "spacing": spacing,
+        "tokens": tokens,
+        "component_rules": component_rules,
+        "responsive": responsive,
+        "interaction_states": interaction_states,
+        "accessibility": accessibility,
+        "consistency": consistency,
+        "reproducibility": reproducibility,
+        "keys": keys,
+        "decisions": decisions,
+    }
+    if web:
+        blueprint["web_contract"] = (
+            "keep the web contract intact: preserve the promised ids "
+            "(index.html#hero, index.html#grid) so the page stays buildable "
+            "and the Builder never dreams up new section ids"
+        )
+    else:
+        blueprint["web_contract"] = (
+            "web contract preservation does not apply (CLI / library / API "
+            "objective)"
+        )
+    return json.dumps(blueprint, ensure_ascii=False, indent=2)
