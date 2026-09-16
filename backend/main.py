@@ -1114,6 +1114,61 @@ def _record_audit_validation_note(slug: str, task_id: str, ws_root) -> None:
         pass
 
 
+def _attachments_ctx(ws_root, limit: int = 8000, per_file: int = 3000) -> str:
+    """Build a bounded, honest context block from the workspace ``uploads/``.
+
+    The user-uploaded files (prompts, specs, images, source) live here, but
+    the thin lane prompts historically never read them — the squad built only
+    from the analyzed codebase context. This renders text-ish files with their
+    real content (truncated per file and in total) and lists binary/image files
+    by name so agents at least know they exist and can honor them.
+    """
+    root = Path(ws_root)
+    up = root / "uploads"
+    if not up.is_dir():
+        return ""
+    parts: list[str] = []
+    total = 0
+    try:
+        entries = sorted(up.iterdir(), key=lambda p: p.name.lower())
+    except OSError:
+        return ""
+    for p in entries:
+        if total >= limit:
+            parts.append("- (more files — available under uploads/)")
+            break
+        try:
+            if not p.is_file():
+                continue
+            data = p.read_bytes()
+        except OSError:
+            continue
+        name = p.name
+        if not data:
+            parts.append(f"- {name} (empty)")
+            total += len(name) + 10
+            continue
+        # Text-ish: decodable as UTF-8 with no NUL bytes in the head. Images /
+        # binaries are listed by name only (can't be baked into a prompt).
+        if b"\x00" not in data[:1024]:
+            try:
+                text = data.decode("utf-8")
+            except (UnicodeDecodeError, ValueError):
+                text = None
+            if text is not None:
+                text = text.strip()
+                if text:
+                    chunk = text[:per_file]
+                    parts.append(f"- {name}:\n{chunk}")
+                    total += len(chunk)
+                    continue
+        parts.append(f"- {name} (binary/image — available under uploads/)")
+        total += len(name) + 40
+    if not parts:
+        return ""
+    return "\n".join(parts)
+
+
 def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None = None,
                      custom_agents: list[dict] | None = None,
                      context_payload: dict | None = None) -> None:
@@ -1178,6 +1233,13 @@ def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None =
                 codebase_ctx = "\n\n".join(parts)[:6000]
             except Exception:
                 codebase_ctx = ""
+        # Attached user files (prompts, specs, images, source) MUST reach every
+        # lane: append their content/names to the shared context so the squad
+        # actually executes them instead of building blind (observed bug).
+        uploads_note = _attachments_ctx(ws_root)
+        if uploads_note:
+            codebase_ctx = (codebase_ctx.strip() + "\n\n"
+                            + demo_llm.user_uploads_block(uploads_note)).strip()
         lanes = [
             ("ecc-planner", "PLAN.md",
              lambda brief: demo_llm.planner_prompt(hc.SQUAD[0][2], goal, codebase_ctx=codebase_ctx)),

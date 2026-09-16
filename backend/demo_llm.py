@@ -364,6 +364,28 @@ def _codebase_block(codebase_ctx: str = "") -> str:
     )
 
 
+def user_uploads_block(uploads_ctx: str = "") -> str:
+    """Standard injected block for user-uploaded reference files.
+
+    Attached files (specs, prompts, images, source) are copied to
+    ``workspaces/uploads/`` but — as observed in production — the swarm never
+    read them because the lane prompts only carried the analyzed codebase
+    context. This block is appended to every lane prompt so the squad actually
+    sees the attached content and treats it as authoritative input.
+    """
+    ctx = (uploads_ctx or "").strip()
+    if not ctx:
+        return ""
+    return (
+        "\n\nThe user attached files with this build request — they are "
+        "AUTHORITATIVE input you MUST honor. Read their content and make your "
+        "plan / architecture / tests / review / build consistent with them "
+        "(follow an attached prompt/spec, match an attached design/image "
+        "reference, or use attached source files).\n\n"
+        f"{ctx}\n"
+    )
+
+
 def _plan_block(plan: str = "") -> str:
     """The Planner's executable PLAN.md, embedded for the lanes that must be
     consistent with it (Architect preserves the promised ids/paths/keys so the
