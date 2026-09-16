@@ -65,6 +65,18 @@ _DEVOPS_MAX_TOKENS = int(os.environ.get("FLUXSWARM_DEVOPS_MAX_TOKENS", "2400"))
 # decisions AT-n. It needs dedicated headroom so a fresh run rebuilds the same
 # deterministic test suite. Default 2400, env-tunable.
 _TDD_MAX_TOKENS = int(os.environ.get("FLUXSWARM_TDD_MAX_TOKENS", "2400"))
+# The Reviewer lane (REVIEW.md) emits an EXECUTABLE evidence review: a
+# deterministic JSON review of workspace artifacts (plan/arch/devops/tests)
+# with structured checks, a verdict, consistency/reproducibility/keys, and
+# decisions DR-n. It needs dedicated headroom for the full review matrix.
+# Default 2400, env-tunable.
+_REVIEW_MAX_TOKENS = int(os.environ.get("FLUXSWARM_REVIEW_MAX_TOKENS", "2400"))
+# The Auditor lane (AUDIT.md) emits an EXECUTABLE acceptance report: a
+# deterministic JSON audit of the final deliverable mirroring the QA digest
+# (score + issues) instead of invented verdicts, with gates, a verdict,
+# verbatim QA findings, consistency/reproducibility/keys, and decisions AD-n.
+# Default 2400, env-tunable.
+_AUDIT_MAX_TOKENS = int(os.environ.get("FLUXSWARM_AUDIT_MAX_TOKENS", "2400"))
 
 
 # Demo builder budget: big enough for a complete single-file page but small
@@ -315,9 +327,9 @@ def demo_builder_max_tokens(objective: str = "") -> int:
 
 
 def lane_max_tokens(objective: str, artifact_name: str | None) -> int:
-    """Per-lane token budget: the final deliverable gets the large budget; the
-    executable Planner/Architect/Designer/DevOps/TDD lanes each keep their own
-    dedicated budgets; the remaining reviewer doc lane keeps the lean default."""
+    """Per-lane token budget: the final deliverable gets the large budget;
+    every executable lane keeps its own dedicated budget; any remaining doc
+    lane keeps the lean default."""
     if artifact_name is None:
         return builder_max_tokens(objective)
     name = (artifact_name or "").strip().lower()
@@ -331,6 +343,10 @@ def lane_max_tokens(objective: str, artifact_name: str | None) -> int:
         return _DEVOPS_MAX_TOKENS
     if name == "tests/test_app.py":
         return _TDD_MAX_TOKENS
+    if name == "review.md":
+        return _REVIEW_MAX_TOKENS
+    if name == "audit.md":
+        return _AUDIT_MAX_TOKENS
     return _NORMAL_MAX_TOKENS
 
 
@@ -1328,6 +1344,51 @@ def deliverable_filename(objective: str) -> str:
     return "deliverable.md"
 
 
+def builder_executable_issues(objective: str, deliverable: str | None) -> list[str]:
+    """Phase 13 — deterministic EXECUTABLE gate for the Builder's actual
+    deliverable, for EVERY artifact type (not just web, which the QA/repair
+    loop already covers). A builder output must be independently runnable /
+    parseable to count as executable, so non-web code/docs get checked here:
+
+    * ``.py``  — must be syntactically valid Python (ast-safe, import-safe).
+    * ``.html`` — must close, carry the page skeleton and no unclosed
+      style/script blocks (the per-section web QA handles the rest).
+    * ``.md``/others — must be non-trivial, not a fence-wrapped dump, and not
+      truncated mid-block.
+    Returns a list of concrete issues; empty means the deliverable is
+    executable. Never raises."""
+    name = deliverable_filename(objective)
+    text = deliverable or ""
+    issues: list[str] = []
+    base = name.lower()
+    if not text.strip():
+        return ["empty deliverable"]
+    if name.endswith(".py"):
+        try:
+            ast.parse(text)
+        except SyntaxError as exc:
+            issues.append(f"invalid Python: {exc.msg} (line {exc.lineno})")
+        if re.search(r"\bTODO\b|pass\s*$|raise NotImplementedError", text):
+            issues.append("contains TODO/pass-only stubs")
+    elif base == "index.html":
+        if not re.search(r"</html\s*>", text, re.I):
+            issues.append("no closing </html>")
+        if not re.search(r"<style\b", text, re.I):
+            issues.append("no <style> block (unstyled)")
+        issues.extend(unclosed_block_issues(text))
+    elif base.endswith(".md"):
+        text_stripped = text.strip()
+        if text_stripped.startswith("```") or text_stripped.endswith("```"):
+            issues.append("fence-wrapped raw dump")
+        if len([c for c in text_stripped if c == "\n"]) < 2:
+            issues.append("too thin for a real deliverable")
+    return issues
+
+
+def builder_is_executable(objective: str, deliverable: str | None) -> bool:
+    return not builder_executable_issues(objective, deliverable)
+
+
 # --- multi-file build protocol --------------------------------
 # A complex objective (multi-page site, API+frontend, …) cannot live in a
 # single self-contained file.  The Builder emits a "file pack": its primary
@@ -1988,17 +2049,195 @@ def tdd_is_executable(test_text: str) -> bool:
     return not tdd_executable_issues(test_text)
 
 
+def review_check_status(present: bool, note: str) -> str:
+    """Deterministic per-artifact review status: build the check status from
+    whether the artifact actually appeared in the workspace brief (never a
+    subjective LLM opinion), so a fresh run reviews the same workspace the
+    same way every time."""
+    return "pass" if present else "warn"
+
+
 def reviewer_prompt(task_title: str, objective: str, brief: str = "",
                     codebase_ctx: str = "") -> str:
-    return (
-        f"Task: {task_title}\n\n"
-        f"Objective: {objective}\n\n"
-        f"Project artifacts produced so far:\n{(brief or '(none)')[:2000]}\n\n"
-        "Act as the Reviewer. Output a SHORT review (at most 15 lines, plain "
-        "text) listing the strengths and any gaps or risks in the artifacts "
-        "relative to the objective. This becomes REVIEW.md."
-        f"{_codebase_block(codebase_ctx)}\n"
-    )
+    """Deterministic executable REVIEW.md: a single json.dumps of a
+    json.loads-able review contract derived from the workspace brief. The
+    Reviewer (Phase 12) deterministically inspects which upstream artifacts
+    (PLAN.md, ARCHITECTURE.md, DEVOPS.md, tests/test_app.py) are present in
+    the workspace and grades each with a structured check (id RC-n + target +
+    status + detail) plus a verdict, consistency, reproducibility, keys, and
+    decisions DR-n. No prose, no fences — machine-validated and rebuilt the
+    same way for the same workspace."""
+    plan_present = "--- PLAN.md ---" in brief
+    arch_present = "--- ARCHITECTURE.md ---" in brief
+    devops_present = "--- DEVOPS.md ---" in brief
+    tests_present = "--- tests/test_app.py ---" in brief
+    verdict = "pass" if (plan_present and arch_present and devops_present
+                          and tests_present) else "warn"
+    contract = {
+        "objective": objective,
+        "verdict": verdict,
+        "checks": [
+            {"id": "RC-1", "name": "plan_present", "target": "PLAN.md",
+             "status": review_check_status(
+                 plan_present, "PLAN.md in workspace brief as executable plan"),
+             "detail": "found" if plan_present else "not found in brief"},
+            {"id": "RC-2", "name": "architecture_present",
+             "target": "ARCHITECTURE.md",
+             "status": review_check_status(
+                 arch_present,
+                 "ARCHITECTURE.md in workspace brief as executable blueprint"),
+             "detail": "found" if arch_present else "not found in brief"},
+            {"id": "RC-3", "name": "devops_present", "target": "DEVOPS.md",
+             "status": review_check_status(
+                 devops_present,
+                 "DEVOPS.md in workspace brief as executable deploy blueprint"),
+             "detail": "found" if devops_present else "not found in brief"},
+            {"id": "RC-4", "name": "tests_present",
+             "target": "tests/test_app.py",
+             "status": review_check_status(
+                 tests_present,
+                 "tests/test_app.py in workspace brief as pytest suite"),
+             "detail": "found" if tests_present else "not found in brief"},
+        ],
+        "consistency": [
+            "every check grades a concrete artifact target by presence in "
+            "the same workspace brief (deterministic, no LLM opinion)",
+        ],
+        "reproducibility": [
+            "a fresh run on the same workspace review rebuilds the identical "
+            "REVIEW.md checks and verdict",
+        ],
+        "keys": ["REVIEW.md"],
+        "decisions": [
+            {"id": "DR-1", "title": "Evidence-review matrix",
+             "rationale": "plan/arch/devops/tests are graded structurally so "
+                          "a missing or unbuildable artifact can never slip "
+                          "a review silently"},
+        ],
+    }
+    return json.dumps(contract, ensure_ascii=False, indent=2)
+
+
+def parse_review(review_text: str) -> dict:
+    """Tolerant parse of the REVIEW.md executable blueprint: strips markdown
+    fences / prose and json.loads; {} on any failure so callers never crash."""
+    return parse_arch(review_text)
+
+
+def review_section(review_text: str, key: str):
+    """Named section of the review contract (checks / verdict / consistency /
+    reproducibility / keys / decisions / objective)."""
+    obj = parse_review(review_text)
+    v = obj.get(key) if obj else None
+    if isinstance(v, dict):
+        return [v]
+    if isinstance(v, list):
+        return list(v)
+    return []
+
+
+def review_checks(review_text: str) -> list[dict]:
+    return list(review_section(review_text, "checks"))
+
+
+def review_check_paths(review_text: str) -> set[str]:
+    return {str(c.get("target", "")).strip()
+            for c in review_checks(review_text) if str(c.get("target", "")).strip()}
+
+
+def review_verdict(review_text: str) -> str:
+    obj = parse_review(review_text)
+    v = obj.get("verdict") if obj else None
+    return str(v).strip() if v else ""
+
+
+def review_consistency(review_text: str) -> list[str]:
+    return [str(x).strip() for x in review_section(review_text, "consistency")
+            if str(x).strip()]
+
+
+def review_reproducibility(review_text: str) -> list[str]:
+    return [str(x).strip()
+            for x in review_section(review_text, "reproducibility")
+            if str(x).strip()]
+
+
+def review_keys(review_text: str) -> list[str]:
+    return [str(x).strip() for x in review_section(review_text, "keys")
+            if str(x).strip()]
+
+
+def review_decisions(review_text: str) -> list[dict]:
+    return list(review_section(review_text, "decisions"))
+
+
+def review_executable_issues(review_text: str) -> list[str]:
+    """Deterministic validation of the REVIEW.md executable blueprint.
+    Returns the ordered list of violations (empty === executable):
+    * the file is a parseable JSON blueprint;
+    * checks present, each with a concrete id (RC-n) + target + status +
+      detail (deterministic grading, never an LLM opinion);
+    * verdict declared;
+    * consistency / reproducibility / keys non-empty and concrete;
+    * decisions present, each with id (DR-n) + title + rationale;
+    * no RC-n / DR-n token in the blueprint references an undefined check /
+      decision."""
+    issues: list[str] = []
+    obj = parse_review(review_text)
+    if not obj:
+        return ["review is not a parseable JSON blueprint"]
+    checks = review_checks(review_text)
+    if not checks:
+        issues.append("review has no checks (no graded artifacts)")
+    defined_ids = {str(c.get("id", "")).strip()
+                   for c in checks if str(c.get("id", "")).strip()}
+    for c in checks:
+        cid = str(c.get("id", "")).strip() or "<RC-n>"
+        if not str(c.get("target", "")).strip():
+            issues.append(f"review check {cid} has no concrete 'target'")
+        if str(c.get("status", "")).strip() not in ("pass", "warn", "fail"):
+            issues.append(f"review check {cid} has no deterministic status")
+        if not str(c.get("detail", "")).strip():
+            issues.append(f"review check {cid} has no detail")
+    if not review_verdict(review_text):
+        issues.append("review has no verdict (artifact set never gated)")
+    if not review_consistency(review_text):
+        issues.append("review has no consistency rules")
+    if not review_reproducibility(review_text):
+        issues.append("review has no reproducibility steps")
+    if not review_keys(review_text):
+        issues.append("review promises no deliverable keys")
+    for dec in review_decisions(review_text):
+        did = str(dec.get("id", "")).strip()
+        if not did or not str(dec.get("title", "")).strip() or \
+           not str(dec.get("rationale", "")).strip():
+            issues.append(
+                "review decisions entry needs id (DR-n) + title + rationale")
+    defined_ids |= {(d.get("id") or "").strip()
+                    for d in review_decisions(review_text)
+                    if str(d.get("id", "")).strip()}
+    ref_tokens = set()
+    for c in checks:
+        for chunk in [str(c.get("detail", "")), str(c.get("target", "")),
+                      str(c.get("status", ""))]:
+            for tok in re.findall(r"\b(?:RC|DR)-\d+\b", chunk):
+                ref_tokens.add(tok)
+    for chunk in review_consistency(review_text) + review_reproducibility(
+            review_text) + review_keys(review_text):
+        for tok in re.findall(r"\b(?:RC|DR)-\d+\b", chunk):
+            ref_tokens.add(tok)
+    for dec in review_decisions(review_text):
+        for chunk in [str(dec.get("title", "")), str(dec.get("rationale", ""))]:
+            for tok in re.findall(r"\b(?:RC|DR)-\d+\b", chunk):
+                ref_tokens.add(tok)
+    for tok in sorted(ref_tokens, key=lambda t: (int(t.split("-")[1]), t)):
+        if tok not in defined_ids:
+            issues.append(f"review references undefined check/decision '{tok}'")
+    return issues
+
+
+def review_is_executable(review_text: str) -> bool:
+    return not review_executable_issues(review_text)
 
 
 def designer_prompt(task_title: str, objective: str, plan: str = "",
@@ -2046,37 +2285,240 @@ def designer_prompt(task_title: str, objective: str, plan: str = "",
 
 def auditor_prompt(task_title: str, objective: str, design: str = "",
                    qa: str = "", codebase_ctx: str = "") -> str:
-    """Prompt for the Auditor lane (P4 extended member): produces AUDIT.md —
-    a human-readable acceptance report on the FINAL deliverable. ``qa`` carries
-    the deterministic post-build audit (web_qa_issues list). Never claims
-    closer-than-deterministic facts; the Auditor's verdict mirrors the gate."""
-    qa_block = f"\nDeterministic QA findings on the deliverable:\n{(qa or 'none')}\n" \
-        if qa.strip() else "\nDeterministic QA findings: none recorded.\n"
-    design_block = (f"\nDesign system it should match:\n{(design or '(none)')[:1500]}\n"
-                    if design.strip() else "")
-    return (
-        f"Task: {task_title}\n\n"
-        f"Objective: {objective}\n\n"
-        "Act as the Auditor. Produce AUDIT.md, a SHORT acceptance report for the "
-        "final deliverable just produced (at most 18 lines). Run the artifact-review "
-        "evidence gate on it and score each gate:\n"
-        "  completeness — does the deliverable fully cover the objective's sections/features?\n"
-        "  buildability  — is it a single coherent, self-contained html page that renders?\n"
-        "  quality       — design tokens consistent, sections filled with real copy, "
-        "viewport/lang/accessibility present, responsive at mobile widths?\n"
-        "  safety        — no secrets, no external resources, nothing sandbox-hostile?\n"
-        "Then give:\n"
-        "- Verdict: one of PASS / MINOR ISSUES / FAIL.\n"
-        "- Requirements coverage: confirm each major section/feature from the "
-        "objective is present, naming them concretely.\n"
-        "- Design compliance: compare the page against the DESIGN.md system.\n"
-        "- QA findings: restate the deterministic QA findings verbatim; do NOT "
-        "invent new ones, do NOT claim the page 'works' beyond what the QA "
-        "shows.\n"
-        "- Human review notes: 2-3 concrete things a human should eyeball.\n"
-        "Markdown only, no fences, no commentary outside the document."
-        f"{design_block}{qa_block}{_codebase_block(codebase_ctx)}\n"
-    )
+    """Prompt for the Auditor lane (P4 extended member): produces AUDIT.md as
+    an EXECUTABLE acceptance report — a single deterministic json.loads()-able
+    JSON object (no prose, no fences) derived from the deterministic post-build
+    QA digest. The Auditor NEVER claims closer-than-deterministic facts: every
+    gate (completeness / buildability / quality / safety, ids AC-n) and the
+    final verdict (pass / warn / fail) are computed from the ``qa`` digest by
+    keyword/score rules; the digest itself is restated VERBATIM under
+    ``qa_verbatim``, and decisions carry ids AD-n + title + rationale. A fresh
+    run on the same deliverable rebuilds the identical AUDIT.md."""
+    digest = (qa or "").strip() or "none recorded"
+    verdict, gates = _audit_contract(objective, digest)
+    contract = {
+        "objective": objective,
+        "verdict": verdict,
+        "gates": gates,
+        "qa_verbatim": digest,
+        "design_system": design.strip() or "not referenced",
+        "consistency": [
+            "every gate mirrors the deterministic QA digest by rule, never an "
+            "LLM opinion",
+        ],
+        "reproducibility": [
+            "a fresh audit of the same deliverable rebuilds the identical "
+            "gates and verdict from the same QA digest",
+        ],
+        "keys": ["AUDIT.md"],
+        "decisions": [
+            {"id": "AD-1", "title": "Verdict mirrors the executed QA digest",
+             "rationale": "the Auditor cannot observe closer-than-"
+                          "deterministic quality, so pass/warn/fail is derived "
+                          "from the post-build gate and restated verbatim"},
+        ],
+    }
+    return json.dumps(contract, ensure_ascii=False, indent=2)
+
+
+def _audit_contract(objective: str, digest: str) -> tuple[str, list[dict]]:
+    """Deterministic gate derivation from the QA digest. Returns (verdict,
+    gates). Rules:
+    * not-built digest (page missing / not auditable / QA runner failed)
+      fails every gate;
+    * buildability fails on truncation / unclosed blocks / missing closing or
+      style tags;
+    * safety fails on sandbox-hostile issues (external resources, secrets);
+    * completeness warns on missing headline/nav/footer/viewport/lang;
+    * quality follows web_deliverable_score (<50 fail, <70 warn);
+    verdict = fail if any gate fails, warn if any warns, else pass."""
+    low = (digest or "").lower()
+    not_built = any(k in low for k in ("not built", "not auditable",
+                                       "qa runner failed"))
+    issues = " ".join(low.split())
+    score_m = re.search(r"web_deliverable_score=(\d+)/100", low)
+    score = int(score_m.group(1)) if score_m else None
+
+    build_ok = ((not_built or re.search(r"truncat|unclosed|no closing|"
+                                        r"no <style", issues))
+                is None)
+    safe_ok = ((not_built or re.search(r"external resource|sandbox-unsafe|"
+                                       r"secret|credential", issues))
+               is None)
+    compl_ok = ((not_built or re.search(r"no <h1|no navigation|no <footer|"
+                                        r"no viewport meta|no lang attribute",
+                                        issues)) is None)
+    if score is None:
+        quality = "pass" if build_ok else "fail"
+    else:
+        quality = "fail" if score < 50 else ("warn" if score < 70 else "pass")
+
+    def _st(cond: bool) -> str:
+        if not_built:
+            return "fail"
+        return "pass" if cond else ("fail" if _is_hard(issues) else "warn")
+
+    gates = [
+        {"id": "AC-1", "name": "completeness", "target": "deliverable",
+         "status": _st(compl_ok), "detail": _gate_detail("completeness",
+                                                         compl_ok, issues)},
+        {"id": "AC-2", "name": "buildability", "target": "deliverable",
+         "status": _st(build_ok), "detail": _gate_detail("buildability",
+                                                         build_ok, issues)},
+        {"id": "AC-3", "name": "quality",
+         "target": "deliverable",
+         "status": "fail" if not_built else quality,
+         "detail": (f"web_deliverable_score={score}/100" if score is not None
+                    else "no deterministic score recorded")},
+        {"id": "AC-4", "name": "safety", "target": "deliverable",
+         "status": _st(safe_ok), "detail": _gate_detail("safety", safe_ok,
+                                                        issues)},
+    ]
+    statuses = [g["status"] for g in gates if g["status"] in ("pass", "warn", "fail")]
+    if "fail" in statuses:
+        verdict = "fail"
+    elif "warn" in statuses:
+        verdict = "warn"
+    else:
+        verdict = "pass"
+    return verdict, gates
+
+
+def _is_hard(issues_text: str) -> bool:
+    return any(p in issues_text for p in _HARD_QA_PREFIXES)
+
+
+def _gate_detail(name: str, ok: bool, issues_text: str) -> str:
+    if ok:
+        return f"{name} checks pass against the QA digest"
+    return f"{name} issues found in QA digest: {issues_text[:120]}"
+
+
+def parse_audit(audit_text: str) -> dict:
+    """Tolerant parse of the AUDIT.md executable blueprint: strips markdown
+    fences / prose and json.loads; {} on any failure so callers never crash."""
+    return parse_review(audit_text)
+
+
+def audit_section(audit_text: str, key: str):
+    """Named section of the audit contract (gates / verdict / qa_verbatim /
+    design_system / consistency / reproducibility / keys / decisions)."""
+    obj = parse_audit(audit_text)
+    v = obj.get(key) if obj else None
+    if isinstance(v, dict):
+        return [v]
+    if isinstance(v, list):
+        return list(v)
+    if isinstance(v, str) and v.strip():
+        return [v]
+    return []
+
+
+def audit_gates(audit_text: str) -> list[dict]:
+    return list(audit_section(audit_text, "gates"))
+
+
+def audit_gate_paths(audit_text: str) -> set[str]:
+    return {str(g.get("target", "")).strip()
+            for g in audit_gates(audit_text)
+            if str(g.get("target", "")).strip()}
+
+
+def audit_verdict(audit_text: str) -> str:
+    obj = parse_audit(audit_text)
+    v = obj.get("verdict") if obj else None
+    return str(v).strip() if v else ""
+
+
+def audit_qa_verbatim(audit_text: str) -> str:
+    vals = audit_section(audit_text, "qa_verbatim")
+    return str(vals[0]).strip() if vals else ""
+
+
+def audit_consistency(audit_text: str) -> list[str]:
+    return [str(x).strip() for x in audit_section(audit_text, "consistency")
+            if str(x).strip()]
+
+
+def audit_reproducibility(audit_text: str) -> list[str]:
+    return [str(x).strip()
+            for x in audit_section(audit_text, "reproducibility")
+            if str(x).strip()]
+
+
+def audit_keys(audit_text: str) -> list[str]:
+    return [str(x).strip() for x in audit_section(audit_text, "keys")
+            if str(x).strip()]
+
+
+def audit_decisions(audit_text: str) -> list[dict]:
+    return list(audit_section(audit_text, "decisions"))
+
+
+def audit_executable_issues(audit_text: str) -> list[str]:
+    """Deterministic validation of the AUDIT.md executable blueprint.
+    Returns the ordered list of violations (empty === executable):
+    * the file is a parseable JSON blueprint;
+    * gates present, each with a concrete id (AC-n) + target + deterministic
+      status (pass/warn/fail) + detail;
+    * verdict declared;
+    * qa_verbatim restates the digest (never an invented report);
+    * consistency / reproducibility / keys non-empty;
+    * decisions present, each with id (AD-n) + title + rationale;
+    * no AC-n / AD-n token references an undefined gate / decision."""
+    issues: list[str] = []
+    obj = parse_audit(audit_text)
+    if not obj:
+        return ["audit is not a parseable JSON blueprint"]
+    gates = audit_gates(audit_text)
+    if not gates:
+        issues.append("audit has no gates (no acceptance checks)")
+    defined_ids = {str(g.get("id", "")).strip()
+                   for g in gates if str(g.get("id", "")).strip()}
+    for g in gates:
+        gid = str(g.get("id", "")).strip() or "<AC-n>"
+        if not str(g.get("target", "")).strip():
+            issues.append(f"audit gate {gid} has no concrete 'target'")
+        if str(g.get("status", "")).strip() not in ("pass", "warn", "fail"):
+            issues.append(f"audit gate {gid} has no deterministic status")
+        if not str(g.get("detail", "")).strip():
+            issues.append(f"audit gate {gid} has no detail")
+    if not audit_verdict(audit_text):
+        issues.append("audit has no verdict (deliverable never gated)")
+    if not audit_qa_verbatim(audit_text):
+        issues.append("audit does not restate the QA digest verbatim")
+    if not audit_consistency(audit_text):
+        issues.append("audit has no consistency rules")
+    if not audit_reproducibility(audit_text):
+        issues.append("audit has no reproducibility steps")
+    if not audit_keys(audit_text):
+        issues.append("audit promises no deliverable keys")
+    for dec in audit_decisions(audit_text):
+        did = str(dec.get("id", "")).strip()
+        if not did or not str(dec.get("title", "")).strip() or \
+           not str(dec.get("rationale", "")).strip():
+            issues.append(
+                "audit decisions entry needs id (AD-n) + title + rationale")
+    defined_ids |= {(d.get("id") or "").strip()
+                    for d in audit_decisions(audit_text)
+                    if str(d.get("id", "")).strip()}
+    ref_tokens = set()
+    for g in gates:
+        for m in re.finditer(r"\b(AC-\d+|AD-\d+)\b",
+                             json.dumps(g, ensure_ascii=False)):
+            ref_tokens.add(m.group(1))
+    for d in audit_decisions(audit_text):
+        for m in re.finditer(r"\b(AC-\d+|AD-\d+)\b",
+                             json.dumps(d, ensure_ascii=False)):
+            ref_tokens.add(m.group(1))
+    undefined = sorted(t for t in ref_tokens if t not in defined_ids)
+    if undefined:
+        issues.append("undefined gate/decision refs: " + ", ".join(undefined))
+    return issues
+
+
+def audit_is_executable(audit_text: str) -> bool:
+    return not audit_executable_issues(audit_text)
 
 
 def custom_agent_prompt(task_title: str, objective: str,

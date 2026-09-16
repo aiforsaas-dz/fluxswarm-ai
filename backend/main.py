@@ -1065,6 +1065,55 @@ def _record_tdd_validation_note(slug: str, task_id: str, ws_root) -> None:
         pass
 
 
+def _record_review_validation_note(slug: str, task_id: str, ws_root) -> None:
+    """Best-effort board note when the Reviewer's REVIEW.md is not an
+    EXECUTABLE evidence review (missing checks/verdict/consistency/keys or
+    non-parseable review). The evidence gate still runs, but the board stays
+    honest about the review's executability. Never raises."""
+    try:
+        issues = demo_llm.review_executable_issues(_doc(ws_root / "REVIEW.md"))
+        if issues:
+            hc._insert_event(
+                slug, task_id, "note",
+                f"Review validation: {len(issues)} issue(s) — "
+                + "; ".join(issues[:3]))
+    except Exception:
+        pass
+
+
+def _record_builder_validation_note(slug: str, task_id: str, ws_root, objective: str) -> None:
+    """Best-effort board note when the Builder's actual deliverable is not an
+    EXECUTABLE artifact (invalid Python, truncated/unstyled HTML, thin or
+    fence-wrapped docs). The build still ships, but the board stays honest
+    about the deliverable's executability. Never raises."""
+    try:
+        text = _doc(ws_root / demo_llm.deliverable_filename(objective))
+        issues = demo_llm.builder_executable_issues(objective, text)
+        if issues:
+            hc._insert_event(
+                slug, task_id, "note",
+                f"Builder validation: {len(issues)} issue(s) — "
+                + "; ".join(issues[:3]))
+    except Exception:
+        pass
+
+
+def _record_audit_validation_note(slug: str, task_id: str, ws_root) -> None:
+    """Best-effort board note when the Auditor's AUDIT.md is not an EXECUTABLE
+    acceptance report (unparseable, no gates, no verdict, missing verbatim QA
+    digest, or undefined AC-n/AD-n refs). The audit artifact still ships, but
+    the board stays honest about the report's executability. Never raises."""
+    try:
+        issues = demo_llm.audit_executable_issues(_doc(ws_root / "AUDIT.md"))
+        if issues:
+            hc._insert_event(
+                slug, task_id, "note",
+                f"Audit validation: {len(issues)} issue(s) — "
+                + "; ".join(issues[:3]))
+    except Exception:
+        pass
+
+
 def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None = None,
                      custom_agents: list[dict] | None = None,
                      context_payload: dict | None = None) -> None:
@@ -1231,6 +1280,16 @@ def _bg_thin_project(slug: str, goal: str, provider_keys=None, pid: int | None =
                     # pytest blueprint; record (honestly, non-blocking) any
                     # non-Python / missing-contract/case issues.
                     _record_tdd_validation_note(slug, tid, ws_root)
+                if assignee == "ecc-reviewer":
+                    # Phase 12: the Reviewer must ship an EXECUTABLE evidence
+                    # review (structured checks + verdict); record any issues
+                    # honestly before the evidence gate runs.
+                    _record_review_validation_note(slug, tid, ws_root)
+                if assignee == "ecc-auditor":
+                    # Phase 14: the Auditor must ship an EXECUTABLE acceptance
+                    # report (gates + verdict mirroring the QA digest); record
+                    # any issues honestly so a broken audit stays visible.
+                    _record_audit_validation_note(slug, tid, ws_root)
             if assignee == "ecc-reviewer":
                 # Evidence gate runs after Reviewer so the Builder only starts
                 # once the workspace holds a verified (deterministic) evidence
@@ -2398,6 +2457,14 @@ def _run_builder(*, slug: str, task_id: str, workspace: str, provider, model,
                                  "no responsive breakpoints")) for i in issues_now):
                 if _device_meta_patch(workspace=workspace):
                     out["device_patched"] = True
+        # Phase 13: the Builder must ship an EXECUTABLE deliverable; record
+        # (honestly, non-blocking) any parse/runnable issues on the final file.
+        try:
+            _record_builder_validation_note(
+                slug=slug, task_id=task_id, ws_root=Path(workspace),
+                objective=objective)
+        except Exception:
+            pass
     return out
 
 
