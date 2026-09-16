@@ -224,7 +224,12 @@
       </div>
       <div style="min-width:0;flex:2">
         <label for="pgoal" data-i18n="lbl_pgoal">Build goal (the squad will execute it)</label>
-        <textarea id="pgoal" placeholder="Build a web app ... produced files land in your workspace and render live under /p/"></textarea>
+        <div style="display:flex;gap:8px;align-items:stretch">
+          <textarea id="pgoal" placeholder="Build a web app ... produced files land in your workspace and render live under /p/" style="flex:1"></textarea>
+          <button class="ghost" id="stageBtn" data-onclick="stagePick" title="Attach files (PDF, images, ZIP, code) so the squad builds on them" style="min-width:46px;white-space:nowrap">+</button>
+        </div>
+        <input type="file" id="stageInput" accept=".pdf,.zip,.txt,.md,.csv,.json,image/*,text/*,application/pdf,application/zip" multiple style="display:none" />
+        <div id="stageChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
       </div>
     </div>
     <div class="row">
@@ -292,6 +297,8 @@ Bring your own provider key for the strongest output — or a free OpenRouter ke
       <div style="display:flex;gap:8px">
         <button class="ghost" id="previewBtn" data-onclick="openPreview" data-i18n="preview_btn">👁 Preview</button>
         <button class="ghost" id="previewTabBtn" data-onclick="openPreviewTab" data-i18n="preview_open">Open</button>
+        <button class="ghost" id="exportZipBtn" data-onclick="downloadProjectZip">⬇ ZIP (export)</button>
+        <button class="ghost" data-onclick="editProjectModal" id="editProjectBtn">✏ Edit</button>
       </div>
     </div>
     <div class="hint" id="resHint" data-i18n="res_hint">Generated files from this board's workspace.</div>
@@ -597,7 +604,7 @@ async function createProject(){
     const r=await fetch(API+"/api/projects",{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({name:name||t("default_project"),goal,agent_ids})});
     if(r.status===402){toast(t("no_credits"));return;}
     if(!r.ok){toast(t("err_prefix")+errt((await r.json().catch(()=>({}))).detail||"Request failed"));return;}
-    const d=await r.json();currentSlug=d.slug;loadProjects();gotoSection("boardCard");connectWS(d.slug);pollTasks(d.slug);loadWorkspace(d.slug);
+    const d=await r.json();currentSlug=d.slug;flushStageChips();loadProjects();gotoSection("boardCard");connectWS(d.slug);pollTasks(d.slug);loadWorkspace(d.slug);
   }catch(e){toast(t("err_prefix")+e.message);}
   finally{btn.disabled=false;btn.textContent=t("btn_launch");}
 }
@@ -626,6 +633,42 @@ async function analyzeZip(){
 }
 document.getElementById("zipInput").addEventListener("change",analyzeZip);
 
+/* ---- pre-launch staged attachments ("+" next to Build Goal) ---------- */
+let stagedFiles=[];
+async function stagePick(){if(!token){openAuth();return;}document.getElementById("stageInput").click();}
+document.getElementById("stageInput").addEventListener("change",stageUpload);
+async function stageUpload(){
+  const input=document.getElementById("stageInput");
+  if(!input.files||!input.files.length){return;}
+  const files=Array.from(input.files);
+  const fd=new FormData();
+  for(const f of files){fd.append("files",f,f.name);}
+  input.value="";
+  const btn=document.getElementById("stageBtn");btn.disabled=true;
+  try{
+    const r=await fetch(API+"/api/project/staged-attachments",{method:"POST",headers:{Authorization:"Bearer "+token},body:fd});
+    if(r.status===402){toast(t("no_credits"));return;}
+    if(!r.ok){const d=await r.json().catch(()=>({}));toast(t("stage_fail")+" "+errt(d.detail||""));return;}
+    const d=await r.json();
+    for(const s of d.staged){if(!stagedFiles.find(x=>x.name===s.name))stagedFiles.push(s);}
+    renderStageChips();
+    if(d.staged.length)toast(t("stage_ok_prefix")+" "+d.staged.map(s=>s.name).join(", "));
+  }catch(e){toast(t("stage_fail")+" "+e.message);}
+  finally{btn.disabled=false;}
+}
+function renderStageChips(){
+  const el=document.getElementById("stageChips");
+  if(!stagedFiles.length){el.innerHTML="";return;}
+  el.innerHTML=stagedFiles.map(s=>`<span class="chip" style="padding:3px 8px"><span class="cdot run"></span>${esc(s.name)} <button class="ghost" data-onclick="stageRemove" data-arg="${esc(s.name)}" style="margin-left:4px;padding:0 4px">×</button></span>`).join("");
+}
+function flushStageChips(){stagedFiles=[];renderStageChips();}
+async function stageRemove(name){
+  try{
+    const r=await fetch(API+"/api/project/staged-attachments/"+encodeURIComponent(name),{method:"DELETE",headers:{Authorization:"Bearer "+token}});
+    if(r.ok){stagedFiles=stagedFiles.filter(s=>s.name!==name);renderStageChips();}
+  }catch(e){}
+}
+
 async function loadProjects(){
   const el=document.getElementById("projectsList");
   if(!token){el.className="empty";el.innerHTML='<div class="empty">'+t("projects_login_empty")+'</div>';return;}
@@ -635,8 +678,11 @@ async function loadProjects(){
     if(!r.ok){el.className="empty";el.innerHTML='<div class="empty">'+t("projects_fail")+'</div>';return;}
     const list=await r.json();
     el.className="";
+    window.lastProjects=list;
+    const zipBtn=document.getElementById("exportZipBtn");
+    if(zipBtn)zipBtn.style.display=(currentUser&&isPaidPlan(currentUser.plan))?"":"none";
     if(!list.length){el.className="empty";el.innerHTML='<div class="empty">'+t("projects_empty")+'</div>';return;}
-    el.innerHTML=list.map(p=>`<div class="proj"><div class="p-title"><b>${esc(p.name||p.board_slug)}</b><div class="p-sub">${esc(p.board_slug)}</div>${launchStatusHtml(p)}</div><button class="ghost" data-onclick="openProject" data-arg="${esc(p.board_slug)}">${t("open_btn")}</button></div>`).join("");
+    el.innerHTML=list.map(p=>`<div class="proj"><div class="p-title"><b>${esc(p.name||p.board_slug)}</b><div class="p-sub">${esc(p.board_slug)}</div>${launchStatusHtml(p)}</div><div style="display:flex;gap:6px;flex-wrap:wrap">${currentUser&&isPaidPlan(currentUser.plan)?`<button class="ghost" data-onclick="downloadProjectZip" data-arg="${esc(p.board_slug)}">⬇ ZIP</button>`:""}<button class="ghost" data-onclick="editProjectModal" data-arg="${esc(p.board_slug)}">✏ Edit</button><button class="ghost" data-onclick="openProject" data-arg="${esc(p.board_slug)}">${t("open_btn")}</button></div></div>`).join("");
   }catch(e){el.className="empty";el.innerHTML='<div class="empty">'+t("projects_fail")+'</div>';}
 }
 function launchStatusHtml(p){
@@ -738,6 +784,63 @@ async function changePassword(){
   }catch(e){toast(t("pw_fail"));}
   finally{btn.disabled=false;}
 }
+function isPaidPlan(plan){return plan&&plan!=="demo";}
+
+async function downloadProjectZip(slug){
+  if(!token){openAuth();return;}
+  slug=slug||currentSlug;
+  if(!slug){toast(t("preview_none"));return;}
+  const r=await fetch(API+`/api/projects/${encodeURIComponent(slug)}/export`,{headers:{Authorization:"Bearer "+token}});
+  if(r.status===402){toast(t("zip_paid_only"));gotoSection("pricing");return;}
+  if(r.status===429){toast(t("zip_burst"));return;}
+  if(!r.ok){toast(t("zip_fail"));return;}
+  const blob=await r.blob();
+  const url=URL.createObjectURL(blob);const a=document.createElement("a");
+  a.href=url;a.download=slug+".zip";document.body.appendChild(a);a.click();
+  URL.revokeObjectURL(url);a.remove();toast(t("zip_ok"));
+}
+
+async function editProjectModal(slug){
+  if(!token){openAuth();return;}
+  slug=slug||currentSlug;
+  if(!slug){toast(t("preview_none"));return;}
+  const box=document.createElement("div");box.className="modal open";box.id="editProjectModal";
+  box.innerHTML=`<div class="box"><h3 style="margin-top:0">${t("edit_title")}</h3>
+    <label>${t("lbl_pname")}</label><input id="editName" maxlength="120" placeholder="${t("lbl_pname")}" />
+    <label>${t("lbl_pgoal")}</label><textarea id="editGoal" rows="5" maxlength="4000"></textarea>
+    <div class="hint">${t("edit_hint")}</div>
+    <div class="row" style="margin-top:14px"><button class="primary" id="editSave">${t("edit_save")}</button><button class="ghost" id="editRelaunch">${t("edit_relaunch")}</button><button class="ghost" id="editCancel">Cancel</button></div></div>`;
+  document.body.appendChild(box);
+  box.querySelector("#editName").value=(currentProjectName||"");
+  box.querySelector("#editGoal").value=(currentProjectGoal||"");
+  box.querySelector("#editCancel").onclick=()=>box.remove();
+  box.addEventListener("click",e=>{if(e.target===box)box.remove();});
+  const doSave=async()=>{
+    const name=box.querySelector("#editName").value.trim();
+    const goal=box.querySelector("#editGoal").value.trim();
+    const body={};
+    if(name)body.name=name;
+    if(goal)body.goal=goal;
+    if(!Object.keys(body).length){toast(t("edit_empty"));return;}
+    const r=await fetch(API+`/api/projects/${encodeURIComponent(slug)}`,{method:"PATCH",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify(body)});
+    if(!r.ok){toast(t("edit_fail")+" "+errt((await r.json().catch(()=>({}))).detail||""));return;}
+    toast(t("edit_ok"));loadProjects();
+  };
+  box.querySelector("#editSave").onclick=async()=>{await doSave();box.remove();};
+  box.querySelector("#editRelaunch").onclick=async()=>{
+    await doSave();
+    box.remove();
+    const rr=await fetch(API+`/api/projects/${encodeURIComponent(slug)}/reopen`,{method:"POST",headers:{Authorization:"Bearer "+token}});
+    if(!rr.ok){toast(t("relaunch_fail")+" "+errt((await rr.json().catch(()=>({}))).detail||""));return;}
+    const dd=await fetch(API+`/api/projects/${encodeURIComponent(slug)}/dispatch`,{method:"POST",headers:{Authorization:"Bearer "+token}});
+    if(!dd.ok){const de=await dd.json().catch(()=>({}));toast(t("relaunch_fail")+" "+errt(de.detail||""));return;}
+    toast(t("relaunch_ok"));gotoSection("boardCard");currentSlug=slug;connectWS(slug);pollTasks(slug);loadWorkspace(slug);
+  };
+  box.querySelector("#editGoal").focus();
+}
+let currentProjectName="",currentProjectGoal="";
+function openProject(slug){currentSlug=slug;const pj=(window.lastProjects||[]).find(p=>p.board_slug===slug);currentProjectName=pj?pj.name||"":"";currentProjectGoal=pj?pj.goal||"":"";gotoSection("boardCard");connectWS(slug);pollTasks(slug);loadWorkspace(slug);}
+
 async function exportData(){
   if(!token){openAuth();return;}
   const r=await fetch(API+"/api/account/export",{headers:{Authorization:"Bearer "+token}});
@@ -818,6 +921,15 @@ const I18N = {
     preview_title:"Live preview", preview_btn:"👁 Preview", preview_open:"Open in new tab",
     preview_none:"Open a board first to preview it", preview_fail:"Preview unavailable",
     preview_tab_hint:"Private board — open the preview inside the app",
+    zip_paid_only:"Downloading your project ZIP is a paid-plan feature — upgrade to download it.",
+    zip_burst:"Export limit reached — please wait a moment and try again.",
+    zip_fail:"Could not download the project ZIP", zip_ok:"Project ZIP downloaded",
+    stage_fail:"Could not attach file", stage_ok_prefix:"Attached:",
+    edit_title:"Edit project", edit_save:"Save changes", edit_relaunch:"Save & relaunch",
+    edit_hint:"Relaunch reopens the board and re-runs the squad against your new goal. Changes cost no extra credits calls to finish the edited build.",
+    edit_empty:"Nothing to change — add a name or goal first.", edit_fail:"Could not update the project", edit_ok:"Project updated",
+    relaunch_fail:"Could not relaunch the project", relaunch_ok:"Project relaunched — the squad is working on the new goal",
+    edit_btn:"Edit",
     settings_title:"Account & data", settings_login_empty:"Sign in to manage your account.",
     sett_account:"Account", lbl_account_name:"Display name", btn_save_name:"Save", name_ok:"Name updated", name_fail:"Could not update name", name_empty:"Name is empty",
     sett_security:"Security", lbl_pw_current:"Current password", lbl_pw_new:"New password",

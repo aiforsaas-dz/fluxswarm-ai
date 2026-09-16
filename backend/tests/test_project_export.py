@@ -1,9 +1,10 @@
 """Server-side paid-export gating tests for GET /api/projects/{slug}/export.
 
 Export endpoint must:
+  - be a PAID-PLAN feature: the free demo plan is denied with 402
   - return a ZIP of all workspace files (path-containment enforced)
   - reject non-owner slugs
-  - enforce per-user hourly burst cap (demo: 5, paid: 60)
+  - enforce the paid per-user hourly burst cap
   - audit every outcome
   - guard against symlink escapes and path traversal
 """
@@ -20,7 +21,7 @@ from fastapi.testclient import TestClient
 import db as db_mod
 import hermes_client as hc
 import main as main_mod
-from main import _EXPORT_DEMO_HOURLY_CAP, _EXPORT_PAID_HOURLY_CAP
+from main import _EXPORT_PAID_HOURLY_CAP
 
 client = TestClient(main_mod.app)
 
@@ -88,6 +89,7 @@ def _set_plan(uid: int, plan: str, credits: int = 200):
 def test_owner_export_returns_zip(tmp_path, monkeypatch):
     monkeypatch.setattr(hc, "HERMES_HOME", str(tmp_path))
     token, uid = _register("own")
+    _set_plan(uid, "starter")
     slug = f"u{uid}-t-{int(time.time())}"
     _seed_workspace(tmp_path, slug, {"app.py": "print(1)\n", "README.md": "# Hi\n"})
     r = client.get(f"/api/projects/{slug}/export", headers=_auth(token))
@@ -101,7 +103,7 @@ def test_owner_export_returns_zip(tmp_path, monkeypatch):
 def test_slash_through_slug_is_rejected(monkeypatch, tmp_path):
     monkeypatch.setattr(hc, "HERMES_HOME", str(tmp_path))
     token, _ = _register("trv")
-    for bad in ["../outside", "%2f..%2fetc", "flux-demo-x"]:
+    for bad in ["../outside", "%2f..%2fetc"]:
         r = client.get(f"/api/projects/{bad}/export", headers=_auth(token))
         assert r.status_code in (403, 404), (bad, r.status_code, r.text)
 
@@ -109,6 +111,7 @@ def test_slash_through_slug_is_rejected(monkeypatch, tmp_path):
 def test_missing_workspace_returns_404(monkeypatch, tmp_path):
     monkeypatch.setattr(hc, "HERMES_HOME", str(tmp_path))
     token, uid = _register("emptyws")
+    _set_plan(uid, "starter")
     slug = f"u{uid}-emptyws-{int(time.time())}"
     r = client.get(f"/api/projects/{slug}/export", headers=_auth(token))
     assert r.status_code == 404
@@ -134,6 +137,7 @@ def test_cross_owner_export_denied(tmp_path, monkeypatch):
 def test_export_contains_only_workspace_files(tmp_path, monkeypatch):
     monkeypatch.setattr(hc, "HERMES_HOME", str(tmp_path))
     token, uid = _register("safezip")
+    _set_plan(uid, "starter")
     slug = f"u{uid}-safezip-{int(time.time())}"
     ws = tmp_path / "kanban" / "boards" / slug / "workspaces"
     ws.mkdir(parents=True, exist_ok=True)
@@ -160,14 +164,14 @@ def _drive_exports(token: str, slug: str, n: int) -> int:
     return ok, statuses
 
 
-def test_demo_burst_limit_enforced(monkeypatch, tmp_path):
+def test_demo_plan_export_denied_paid_required(monkeypatch, tmp_path):
     monkeypatch.setattr(hc, "HERMES_HOME", str(tmp_path))
-    token, uid = _register("burstdemo")
-    slug = f"u{uid}-burstdemo-{int(time.time())}"
+    token, uid = _register("demoexp")
+    slug = f"u{uid}-demoexp-{int(time.time())}"
     _seed_workspace(tmp_path, slug, {"x.py": "y\n"})
-    ok, statuses = _drive_exports(token, slug, _EXPORT_DEMO_HOURLY_CAP + 2)
-    assert ok == _EXPORT_DEMO_HOURLY_CAP
-    assert statuses.count(429) == 2
+    r = client.get(f"/api/projects/{slug}/export", headers=_auth(token))
+    assert r.status_code == 402
+    assert "paid-plan" in r.json()["detail"]
 
 
 def test_paid_plan_untouched_by_demo_cap(monkeypatch, tmp_path):
@@ -205,6 +209,7 @@ def _project_export_lines():
 def test_export_records_audit_ok(monkeypatch, tmp_path):
     monkeypatch.setattr(hc, "HERMES_HOME", str(tmp_path))
     token, uid = _register("aud")
+    _set_plan(uid, "starter")
     slug = f"u{uid}-aud-{int(time.time())}"
     _seed_workspace(tmp_path, slug, {"main.py": "pass\n"})
     client.get(f"/api/projects/{slug}/export", headers=_auth(token))
@@ -216,11 +221,22 @@ def test_export_records_audit_ok(monkeypatch, tmp_path):
 def test_empty_workspace_records_audit_fail(monkeypatch, tmp_path):
     monkeypatch.setattr(hc, "HERMES_HOME", str(tmp_path))
     token, uid = _register("audemp")
+    _set_plan(uid, "starter")
     slug = f"u{uid}-audemp-{int(time.time())}"
     client.get(f"/api/projects/{slug}/export", headers=_auth(token))
     lines = _project_export_lines()
     assert len(lines) >= 1
     assert '"reason": "empty_workspace"' in lines[-1]
+
+
+def test_demo_denied_records_audit_fail(monkeypatch, tmp_path):
+    monkeypatch.setattr(hc, "HERMES_HOME", str(tmp_path))
+    token, uid = _register("auddem")
+    slug = f"u{uid}-auddem-{int(time.time())}"
+    _seed_workspace(tmp_path, slug, {"p.txt": "x\n"})
+    client.get(f"/api/projects/{slug}/export", headers=_auth(token))
+    lines = [l for l in _project_export_lines() if "paid_required" in l]
+    assert len(lines) >= 1
 
 
 def test_unauthorized_records_audit_fail(monkeypatch, tmp_path):

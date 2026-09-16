@@ -417,6 +417,26 @@ def add_project(user_id: int, board_slug: str, name: str, goal: str) -> int:
     return pid
 
 
+def update_project(pid: int, name: str | None = None, goal: str | None = None) -> bool:
+    """Update a project's display name and/or build goal in place. Returns True
+    when at least one field changed; an empty update is a no-op."""
+    sets, vals = [], []
+    if name is not None and str(name).strip():
+        sets.append("name=?"); vals.append(str(name).strip())
+    if goal is not None:
+        sets.append("goal=?"); vals.append(str(goal).strip())
+    if not sets:
+        return False
+    vals.append(pid)
+    c = _conn()
+    try:
+        cur = c.execute(f"UPDATE projects SET {', '.join(sets)} WHERE id=?", vals)
+        c.commit()
+        return cur.rowcount > 0
+    finally:
+        c.close()
+
+
 def set_launch_outcome(pid: int, status: str, outcome: str, reason: str = "", refunded: bool = False) -> None:
     """Persist a project's launch-terminal state.
 

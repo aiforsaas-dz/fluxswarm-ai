@@ -999,6 +999,35 @@ def _seed_project_workspace(ws: Path, goal: str) -> None:
         encoding="utf-8")
 
 
+def rewrite_project_objective(board: str, goal: str) -> bool:
+    """Rewrite the OBJECTIVE block of an existing board's TASK.md in place.
+
+    Used by the edit-after-build flow so a relaunch (reopen + re-dispatch)
+    drives the squad against the NEW goal text instead of the launch-time one.
+    Best-effort and idempotent: returns True when the file was rewritten."""
+    try:
+        ws = project_workspace_dir(board)
+        task = ws / "TASK.md"
+        if not task.exists():
+            ws.mkdir(parents=True, exist_ok=True)
+            _seed_project_workspace(ws, goal)
+            return True
+        text = task.read_text(encoding="utf-8", errors="ignore")
+        marker = "OBJECTIVE:\n"
+        start = text.find(marker)
+        if start >= 0:
+            head = text[: start + len(marker)]
+            tail_start = text.find("\n\n", start)
+            rest = text[tail_start:] if tail_start >= 0 else "\n"
+            text = head + goal.strip() + rest
+        else:
+            text = text.rstrip() + f"\n\nOBJECTIVE:\n{goal.strip()}\n"
+        task.write_text(text, encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
 # Thin 8-lane project graph: (profile, UI role, task title, status).
 # Mirrors the fat squad (SQUAD + VERIFIER + SYNTHESIZER) + the two extended
 # members (Designer, Auditor) so the board renders the SAME 8-agent swarm the

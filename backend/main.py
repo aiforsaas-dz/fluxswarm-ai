@@ -1759,6 +1759,11 @@ class ProjectCreate(BaseModel):
     agent_ids: list[int] = Field(default_factory=list)
 
 
+class ProjectEdit(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    goal: str | None = Field(default=None, min_length=1, max_length=4000)
+
+
 @functools.lru_cache(maxsize=1)
 def _count_test_functions() -> tuple[int, str]:
     """Live truth for the landing trust badge: AST-scan this project's tests/
@@ -3017,6 +3022,16 @@ def api_create_project(payload: ProjectCreate, request: Request,
     slug = make_project_slug(user["id"])
     keys = _user_provider_keys(user)
     custom_agents = _resolve_custom_agents(user, payload.agent_ids)
+    # Consume the user's pre-launch staged uploads ("+" in the Build Goal field)
+    # as real attachments BEFORE the workspace is seeded, so the swarm sees them.
+    # Best-effort: an empty staging dir is a no-op and never blocks the launch.
+    try:
+        attached = _attach_staged(user["id"], slug)
+        if attached:
+            audit.audit("project.attach_staged", uid=user["id"], email=user["email"],
+                        ip=_client_ip(request), outcome="ok", slug=slug, files=len(attached))
+    except Exception:
+        pass
     # Pull the cached analysis snapshot (uploaded project codebase) so agents can
     # plan/improve against the real source.  TTL'd, per-user, best-effort: if it
     # expired or was never uploaded, the launch proceeds with goal text only.
@@ -3071,6 +3086,41 @@ def api_create_project(payload: ProjectCreate, request: Request,
     audit.audit("project.create", uid=user["id"], email=user["email"], ip=_client_ip(request),
                 outcome="ok", slug=slug, plan=user["plan"])
     return _swarm_payload(slug, payload.goal, swarm)
+
+
+@app.patch("/api/projects/{slug}")
+def api_edit_project(slug: str, payload: ProjectEdit, request: Request,
+                     user: dict = Depends(get_current_user)):
+    """Edit a built project's display name and/or build goal (edit-after-build).
+
+    Owner-only. Only the stored row is changed here — a following relaunch
+    (reopen + dispatch) rewrites the workspace objective and re-runs the squad
+    against the new goal text.
+    """
+    slug = _require_board_slug(slug)
+    if not slug.startswith(f"u{user['id']}-"):
+        audit.audit("project.edit", uid=user["id"], email=user["email"],
+                    ip=_client_ip(request), outcome="fail", reason="unauthorized", slug=slug)
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    proj = _project_by_board_slug(slug)
+    if not proj:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if proj.get("launch_refunded"):
+        audit.audit("project.edit", uid=user["id"], email=user["email"],
+                    ip=_client_ip(request), outcome="fail", reason="refunded", slug=slug)
+        raise HTTPException(status_code=409, detail="Refunded launch cannot be edited")
+    if payload.name is None and payload.goal is None:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+    updated = db.update_project(proj["id"], name=payload.name, goal=payload.goal)
+    if payload.goal is not None and str(payload.goal).strip():
+        hc.rewrite_project_objective(slug, str(payload.goal).strip())
+    audit.audit("project.edit", uid=user["id"], email=user["email"],
+                ip=_client_ip(request), outcome="ok", slug=slug,
+                changed=bool(updated), name_changed=payload.name is not None,
+                goal_changed=payload.goal is not None)
+    return {"slug": slug, "updated": updated,
+            "name": payload.name.strip() if payload.name else proj.get("name"),
+            "goal": payload.goal.strip() if payload.goal else proj.get("goal")}
 
 
 @app.post("/api/project/analyze")
@@ -3219,10 +3269,10 @@ def api_delete_attachment(slug: str, name: str, request: Request,
 
 # ---------- paid-export gating: GET /api/projects/{slug}/export ----------
 # Generated project files are the user's deliverable; this endpoint bundles the
-# workspace into a ZIP, server-side gated by a per-user hourly burst cap
-# (demo: 5/h, paid: 60/h) so the cost surface stays bounded for free users.
+# workspace into a ZIP. Export is a PAID-PLAN feature: the free Demo plan is
+# denied entirely (402 + upgrade message) and paid plans are gated by a per-user
+# hourly burst cap so the cost surface stays bounded.
 _EXPORT_HOURLY_CAP = 3600
-_EXPORT_DEMO_HOURLY_CAP = int(os.environ.get("FLUXSWARM_EXPORT_DEMO_HOURLY_CAP", "5"))
 _EXPORT_PAID_HOURLY_CAP = int(os.environ.get("FLUXSWARM_EXPORT_PAID_HOURLY_CAP", "60"))
 _EXPORT_MAX_ZIP_BYTES = int(os.environ.get("FLUXSWARM_EXPORT_MAX_ZIP_BYTES", "62914560"))
 _export_hits: dict[str, list[float]] = {}
@@ -3236,27 +3286,183 @@ _analysis_cache: dict[int, dict] = {}
 _analysis_cache_lock = threading.Lock()
 _ANALYSIS_CACHE_TTL_S = 600  # 10 minutes
 
+# ---- pre-launch staged attachments ("+" in the Build Goal field) ----------
+# The "+" lets a user attach files/images BEFORE the project exists (there is no
+# slug yet), so uploads land in a per-user staging dir hit by the NEXT launch.
+# Bounded: per-file size cap (same as project attachments), a total-bytes cap
+# and a TTL sweep so stale uploads never pile up. The launch consumes (and
+# clears) the staged set, so each file attaches to exactly one build.
+_STAGE_MAX_FILES = int(os.environ.get("FLUXSWARM_STAGE_MAX_FILES", "25"))
+_STAGE_MAX_BYTES = int(os.environ.get("FLUXSWARM_STAGE_MAX_BYTES", str(25 * 1024 * 1024)))
+_STAGE_TTL_S = int(os.environ.get("FLUXSWARM_STAGE_TTL_S", "3600"))
 
-def _export_allowed(uid: int, plan: str) -> bool:
-    """Per-user rolling hourly burst gate. Demo plan gets a small cap, paid
-    plans a larger one. In-memory only (bounded, single-process), like the auth
-    rate limiter; used as abuse protection, never as a billing authority."""
+
+def _stage_dir(uid: int) -> Path:
+    return Path(hc.HERMES_HOME) / "staged" / f"u{uid}"
+
+
+def _sweep_stage(uid: int) -> None:
+    """Remove staged uploads older than the TTL (called on every stage/list)."""
+    d = _stage_dir(uid)
+    try:
+        now = time.time()
+        for p in d.glob("*"):
+            try:
+                if p.is_file() and now - p.stat().st_mtime > _STAGE_TTL_S:
+                    p.unlink()
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+
+def _staged_total(uid: int) -> int:
+    d = _stage_dir(uid)
+    total = 0
+    try:
+        for p in d.glob("*"):
+            try:
+                if p.is_file():
+                    total += p.stat().st_size
+            except OSError:
+                pass
+    except OSError:
+        pass
+    return total
+
+
+@app.post("/api/project/staged-attachments")
+async def api_stage_attachments(request: Request,
+                                files: list[UploadFile] | None = File(default=None),
+                                user: dict = Depends(get_current_user)):
+    """Persist one or more uploads into the user's pre-launch staging dir.
+
+    The Build Goal field's "+" calls this BEFORE a project exists; the next
+    launch consumes the staged files as real project attachments. Fails closed
+    on unsafe names, the per-file size cap and the total-bytes cap.
+    """
+    files = files or []
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+    _sweep_stage(user["id"])
+    d = _stage_dir(user["id"])
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        if len(list(d.glob("*"))) + len(files) > _STAGE_MAX_FILES:
+            raise HTTPException(status_code=413, detail="Too many staged files — remove some first")
+        saved = []
+        for up in files:
+            name = (up.filename or "upload.bin").strip()
+            try:
+                safe = hc._safe_attachment_name(name)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            data = await up.read()
+            if not data:
+                raise HTTPException(status_code=400, detail="Empty file")
+            if len(data) > hc._ATTACH_MAX_BYTES:
+                raise HTTPException(status_code=413, detail="File exceeds the size cap")
+            if _staged_total(user["id"]) + len(data) > _STAGE_MAX_BYTES:
+                raise HTTPException(status_code=413, detail="Total staging size exceeded")
+            target = (d / safe).resolve()
+            if not str(target).startswith(str(d.resolve()) + os.sep):
+                raise HTTPException(status_code=400, detail="Unsafe filename")
+            target.write_bytes(data)
+            saved.append({"name": safe, "size": len(data)})
+        audit.audit("project.stage", uid=user["id"], email=user["email"],
+                    ip=_client_ip(request), outcome="ok",
+                    files=len(saved), bytes_=sum(s["size"] for s in saved))
+        return {"staged": saved}
+    except HTTPException:
+        raise
+    except OSError:
+        raise HTTPException(status_code=500, detail="Failed to stage uploads")
+
+
+@app.get("/api/project/staged-attachments")
+def api_list_staged(request: Request, user: dict = Depends(get_current_user)):
+    """List the user's staged pre-launch uploads (name + size)."""
+    _sweep_stage(user["id"])
+    out = []
+    for p in sorted(_stage_dir(user["id"]).glob("*")):
+        try:
+            if p.is_file():
+                out.append({"name": p.name, "size": p.stat().st_size})
+        except OSError:
+            pass
+    return {"staged": out}
+
+
+@app.delete("/api/project/staged-attachments/{name}")
+def api_remove_staged(name: str, request: Request,
+                      user: dict = Depends(get_current_user)):
+    """Remove one staged pre-launch upload by its (safe) filename."""
+    try:
+        safe = hc._safe_attachment_name(name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    d = _stage_dir(user["id"]).resolve()
+    target = (d / safe).resolve()
+    if not str(target).startswith(str(d) + os.sep) or not target.is_file():
+        raise HTTPException(status_code=404, detail="Staged file not found")
+    try:
+        target.unlink()
+    except OSError:
+        raise HTTPException(status_code=500, detail="Failed to remove staged file")
+    audit.audit("project.stage_rm", uid=user["id"], email=user["email"],
+                ip=_client_ip(request), outcome="ok", name=safe)
+    return {"removed": True, "name": safe}
+
+
+def _attach_staged(uid: int, slug: str) -> list[str]:
+    """Consume the user's staged uploads as real attachments for *slug*.
+
+    Called inside the create-project flow right before the launch so the swarm
+    (and the workspace seeding) sees them. Best-effort and never raises; the
+    staging dir is cleared so every file attaches to exactly one build.
+    """
+    d = _stage_dir(uid)
+    attached = []
+    try:
+        if d.is_dir():
+            for p in sorted(d.glob("*")):
+                if not p.is_file():
+                    continue
+                try:
+                    hc.save_attachment(slug, p.name, p.read_bytes())
+                    attached.append(p.name)
+                except Exception:
+                    continue
+            import shutil
+            shutil.rmtree(d, ignore_errors=True)
+    except OSError:
+        pass
+    return attached
+
+
+def _export_allowed(uid: int, plan: str) -> str:
+    """Per-user rolling hourly burst gate. Export is PAID-ONLY: the free demo
+    plan is denied outright (``paid_required``), paid plans get a larger hourly
+    cap (``burst_limit`` when exceeded, ``ok`` otherwise). In-memory only
+    (bounded, single-process), used as abuse protection, never as a billing
+    authority."""
     is_paid = (db.PLANS.get(plan) or {}).get("price", 0) > 0
-    cap = _EXPORT_PAID_HOURLY_CAP if is_paid else _EXPORT_DEMO_HOURLY_CAP
+    if not is_paid:
+        return "paid_required"
     bucket = f"{uid}:{int(time.time() // 3600)}"
     now = time.time()
     with _export_lock:
         hits = [t for t in _export_hits.get(bucket, []) if now - t < _EXPORT_HOURLY_CAP]
-        if len(hits) >= cap:
+        if len(hits) >= _EXPORT_PAID_HOURLY_CAP:
             _export_hits[bucket] = hits
-            return False
+            return "burst_limit"
         hits.append(now)
         _export_hits[bucket] = hits
         if len(_export_hits) > 65536:  # bound memory on long-lived workers
             for k in list(_export_hits):
                 if not _export_hits[k]:
                     _export_hits.pop(k, None)
-        return True
+        return "ok"
 
 
 def _export_bundle(slug: str) -> bytes:
@@ -3294,7 +3500,13 @@ def api_project_export(slug: str, request: Request, user: dict = Depends(get_cur
         audit.audit("project.export", uid=user["id"], email=user["email"], ip=_client_ip(request),
                     outcome="fail", reason="unauthorized", slug=slug)
         raise HTTPException(status_code=403, detail="Unauthorized")
-    if not _export_allowed(user["id"], user.get("plan", "demo")):
+    export_guard = _export_allowed(user["id"], user.get("plan", "demo"))
+    if export_guard != "ok":
+        if export_guard == "paid_required":
+            audit.audit("project.export", uid=user["id"], email=user["email"], ip=_client_ip(request),
+                        outcome="fail", reason="paid_required", slug=slug)
+            raise HTTPException(status_code=402,
+                                detail="Project export is a paid-plan feature — upgrade your plan to download your files")
         audit.audit("project.export", uid=user["id"], email=user["email"], ip=_client_ip(request),
                     outcome="fail", reason="burst_limit", slug=slug)
         raise HTTPException(status_code=429, detail="Export rate limit reached — please wait a moment")
