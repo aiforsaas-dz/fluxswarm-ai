@@ -5,6 +5,9 @@
 - No explanations or rationale unless explicitly asked.
 - Analysis prompts → short structured answer, no preamble.
 - If the user requests a verbose deliverable (proposal/analysis/prompt), produce exactly that and nothing more.
+- HARD BAN on prose mode (observed violations in session fluxswarm01): no thinking-aloud, no "دعني أتحقق/Let me check", no conversational narration, no recap of already-stated status, no greetings/closings, no announcing the next step before doing it.
+- Linguistic efficiency rule: users may write Arabic/French — reply in their language but keep BULLETS, not paragraphs; one line per fact; numbers/tests/evidence instead of narration. ~120 words max unless a verbose deliverable was explicitly requested.
+- Never restate the request. Facts → result → blocker (or "none").
 
 ## Environment / Procedure
 - Repo: `aiforsaas-dz/fluxswarm-ai` — SOLE canonical remote for this project; always push there (NEVER anywhere else). Local dev in `D:\Projects\fluxswarm`. Windows PowerShell 5.1.
