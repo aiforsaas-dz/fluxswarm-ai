@@ -924,6 +924,9 @@ async function editProjectModal(slug){
   box.querySelector("#editGoal").value=(currentProjectGoal||"");
   box.querySelector("#editCancel").onclick=()=>box.remove();
   box.addEventListener("click",e=>{if(e.target===box)box.remove();});
+  box.setAttribute("data-slug",slug);
+  const esi=box.querySelector("#editStageInput");if(esi)esi.addEventListener("change",editStageUpload);
+  renderEditStageChips();
   const doSave=async()=>{
     const name=box.querySelector("#editName").value.trim();
     const goal=box.querySelector("#editGoal").value.trim();
@@ -946,39 +949,6 @@ async function editProjectModal(slug){
     toast(t("relaunch_ok"));gotoSection("boardCard");currentSlug=slug;connectWS(slug);pollTasks(slug);loadWorkspace(slug);
   };
   box.querySelector("#editGoal").focus();
-}
-/* ---- Edit-modal staged attachments ("+" next to Build Goal, mirrors create) ---- */
-let editStagedFiles=[];
-async function editStagePick(){if(!token){openAuth();return;}document.getElementById("editStageInput").click();}
-async function editStageUpload(){
-  const input=document.getElementById("editStageInput");
-  if(!input.files||!input.files.length){return;}
-  const files=Array.from(input.files);const fd=new FormData();
-  for(const f of files){fd.append("files",f,f.name);}
-  input.value="";
-  const btn=document.getElementById("editStageBtn");btn.disabled=true;
-  try{
-    const r=await fetch(API+"/api/project/staged-attachments",{method:"POST",headers:{Authorization:"Bearer "+token},body:fd});
-    if(r.status===402){toast(t("no_credits"));return;}
-    if(!r.ok){const d=await r.json().catch(()=>({}));toast(t("stage_fail")+" "+errt(d.detail||""));return;}
-    const d=await r.json();
-    for(const s of d.staged||[]){if(!editStagedFiles.find(x=>x.name===s.name))editStagedFiles.push(s);}
-    renderEditStageChips();
-    if(d.staged&&d.staged.length){toast(t("stage_ok_prefix")+" "+d.staged.map(s=>s.name).join(", "));}
-  }catch(e){toast(t("stage_fail")+" "+e.message);}
-  finally{btn.disabled=false;}
-}
-function renderEditStageChips(){
-  const el=document.getElementById("editStageChips");
-  if(!el)return;
-  if(!editStagedFiles.length){el.innerHTML="";return;}
-  el.innerHTML=editStagedFiles.map(s=>`<span class="chip" style="padding:3px 8px"><span class="cdot run"></span>${esc(s.name)} <button class="ghost" data-onclick="editStageRemove" data-arg="${esc(s.name)}" style="margin-left:4px;padding:0 4px">×</button></span>`).join("");
-}
-async function editStageRemove(name){
-  try{
-    const r=await fetch(API+"/api/project/staged-attachments/"+encodeURIComponent(name),{method:"DELETE",headers:{Authorization:"Bearer "+token}});
-    if(r.ok){editStagedFiles=editStagedFiles.filter(s=>s.name!==name);renderEditStageChips();}
-  }catch(e){}
 }
 let currentProjectName="",currentProjectGoal="";
 function openProject(slug){currentSlug=slug;const pj=(window.lastProjects||[]).find(p=>p.board_slug===slug);currentProjectName=pj?pj.name||"":"";currentProjectGoal=pj?pj.goal||"":"";gotoSection("boardCard");connectWS(slug);pollTasks(slug);loadWorkspace(slug);}
