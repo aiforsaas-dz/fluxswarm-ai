@@ -216,21 +216,44 @@
   .check{color:var(--ok);font-weight:700}
   /* ===== live swarm visual ===== */
   .stage{border:1px solid var(--border);border-radius:var(--r-xl);background:linear-gradient(180deg,var(--surface),var(--surface2));padding:var(--s5) var(--s6);margin:var(--s5) 0 var(--s7);box-shadow:var(--shadow)}
-  .stage-head{display:flex;align-items:center;gap:var(--s4);font-size:var(--f-sm);color:var(--muted);margin-bottom:var(--s4)}
+  .stage-head{display:flex;justify-content:space-between;align-items:center;gap:var(--s4);font-size:var(--f-sm);color:var(--muted);margin-bottom:var(--s4)}
   .stage-head .dots{display:inline-flex;gap:var(--s1)}
   .stage-head .dots i{width:9px;height:9px;border-radius:50%;background:var(--border)}
   .stage-head .dots i:first-child{background:var(--bad)}
   .stage-head .dots i:nth-child(2){background:var(--warn)}
   .stage-head .dots i:last-child{background:var(--ok)}
-  .lives{display:flex;flex-direction:column;gap:var(--s2)}
-  .live{display:flex;align-items:center;gap:var(--s2);font-size:var(--f-sm);color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:var(--s2) var(--s3)}
-  .spark{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px color-mix(in srgb,var(--accent) 80%,transparent);flex:0 0 auto}
-  .arrow{text-align:center;color:var(--accent);font-size:var(--f-sm);margin:var(--s3) 0}
-  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:var(--s3)}
+  .lives{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap}
+  .live{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:140px;padding:var(--s4) var(--s3);border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);text-align:center}
+  .live .role{font-family:var(--font-display);font-size:var(--f-md);font-weight:700}
+  .live .act{font-size:var(--f-xs);color:var(--muted)}
+  .spark{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px color-mix(in srgb,var(--accent) 80%,transparent);margin-top:6px;animation:pulse 1.2s infinite}
+  .spark.done{background:var(--ok);box-shadow:0 0 10px color-mix(in srgb,var(--ok) 80%,transparent);animation:none}
+  .arrow{color:var(--muted);font-size:var(--f-xl);flex:0 0 auto}
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding-top:var(--s5)}
   .code{background:color-mix(in srgb,var(--surface2) 60%,#080c14);border:1px solid var(--border);border-radius:var(--r-md);padding:var(--s3) var(--s4);display:flex;flex-direction:column;gap:var(--s1)}
   .code b{font-family:var(--font-display);font-size:var(--f-sm);color:var(--accent)}
   .code span{font-size:11px;color:var(--muted)}
   .squad-strip{display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s5)}
+  /* ===== landing sections (design-preview identity) ===== */
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .land-section{padding:var(--s8) 0 0}
+  .sec-title{text-align:center;font-family:var(--font-display);font-weight:700;font-size:clamp(26px,4vw,38px);letter-spacing:-.01em;margin-bottom:var(--s3)}
+  .sec-sub{text-align:center;color:var(--muted);max-width:620px;margin:0 auto var(--s6);font-size:var(--f-xl)}
+  .steps{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--s5)}
+  .step{border:1px solid var(--border);border-radius:var(--r-xl);padding:var(--s6);background:var(--surface)}
+  .step .num{width:34px;height:34px;border-radius:var(--r-md);background:var(--grad);color:var(--btn-text);display:grid;place-items:center;font-weight:800;margin-bottom:var(--s4)}
+  .step h3{font-size:var(--f-lg);margin-bottom:var(--s2)}
+  .step p{color:var(--muted);font-size:var(--f-sm);line-height:1.6}
+  .grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:var(--s4)}
+  .feat{border:1px solid var(--border);border-radius:var(--r-xl);padding:var(--s5);background:var(--surface)}
+  .feat .ic{width:40px;height:40px;border-radius:var(--r-md);background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);display:grid;place-items:center;font-size:20px;margin-bottom:var(--s3)}
+  .feat h3{font-size:var(--f-lg);margin-bottom:var(--s1)}
+  .feat p{color:var(--muted);font-size:var(--f-sm)}
+  .cta-band{margin:var(--s8) auto 0;max-width:900px;border-radius:var(--r-2xl);padding:var(--s8) var(--s7);text-align:center;background:var(--grad);box-shadow:0 24px 60px color-mix(in srgb,var(--accent) 25%,transparent);position:relative;overflow:hidden}
+  .cta-band h2{font-size:clamp(26px,4vw,40px);color:#04121c;margin-bottom:var(--s2)}
+  .cta-band p{margin:0 0 var(--s5);color:#1f3a4a;font-weight:500}
+  .cta-band .btn{background:#ffffff;color:#04121c;height:48px;padding:0 var(--s7);border-radius:var(--r-md);font-weight:700;box-shadow:0 10px 26px rgba(0,0,0,.22)}
+  .cta-band .btn:hover{box-shadow:0 14px 32px rgba(0,0,0,.28)}
   .chip{display:inline-flex;align-items:center;gap:var(--s2);font-size:var(--f-xs);color:var(--text);border:1px solid var(--border);background:var(--surface2);border-radius:var(--r-full);padding:var(--s2) var(--s3)}
   .chip .cdot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px color-mix(in srgb,var(--ok) 70%,transparent)}
   .chip .cdot.run{background:var(--blue);animation:pulse 1.5s infinite}
@@ -379,15 +402,15 @@
 
   <!-- HERO / CREATE -->
   <section class="hero" id="hero">
-    <p class="eyebrow">⚡ AI agent squad</p>
-    <h2 class="hero-title" data-i18n-html="hero_title">Launch a project with a <span class="grad">full agent squad</span></h2>
-    <p class="hero-sub">Type a goal and watch Planner, Architect, DevOps, TDD, Reviewer &amp; Builder plan, build, test and assemble it on a live board — in minutes, not weeks.</p>
+    <p class="eyebrow" data-i18n-html="hero_eyebrow">✦ AI Agents · Multi-agent Swarm <b>Now live</b></p>
+    <h2 class="hero-title" data-i18n-html="hero_title">Tell us what to build.<br><span class="grad">We'll build it.</span></h2>
+    <p class="hero-sub" data-i18n="hero_sub">Turn a one-line goal into a working product — a squad of specialist AI agents plans, codes, tests and ships it while you watch.</p>
     <div class="cta-row">
-      <button class="btn primary" data-onclick="gotoLaunch" data-arg="launch" data-i18n="cta_launch">⚡ Build with the swarm</button>
-      <button class="btn ghost" data-onclick="launchDemo" data-i18n="btn_demo">▶ Free Demo</button>
+      <button class="btn primary" data-onclick="gotoLaunch" data-arg="launch" data-i18n="cta_launch">Start building free →</button>
+      <button class="btn ghost" data-onclick="launchDemo" data-i18n="btn_demo">▶ Watch the live demo</button>
       <button class="btn ghost" data-onclick="pickZip">📦 Analyze project ZIP</button>
     </div>
-    <p class="fine" data-i18n="fine_hint">No credit card — 5 free credits on the Demo plan · your keys, your calls</p>
+    <p class="fine" data-i18n="fine_hint">No credit card required — 5 free credits to start · your keys, your calls</p>
     <div class="trust">
       <span><i class="check">✓</i> {{ trust_checks }} automated checks</span>
       <span><i class="check">✓</i> Payments by Paddle</span>
@@ -435,18 +458,51 @@
   <section class="stage" aria-hidden="true">
     <div class="stage-head">
       <span class="dots"><i></i><i></i><i></i></span>
-      <span class="muted">FluxSwarm — live run N° K-2026-051</span>
+      <span class="muted">live run — tell us what to build. we'll build it.</span>
+      <span class="muted">▲ {{ trust_checks }} checks</span>
     </div>
     <div class="lives">
-      <div class="live"><span class="spark"></span>Planner — frontend spec ready</div>
-      <div class="live"><span class="spark"></span>Architect — API contract locked</div>
-      <div class="live"><span class="spark"></span>DevOps — CI pipeline deploying</div>
+      <div class="live"><span class="role">Planner</span><span class="act">breaking work into tasks…</span><span class="spark"></span></div>
+      <div class="arrow">→</div>
+      <div class="live"><span class="role">Architect</span><span class="act">designing structure…</span><span class="spark"></span></div>
+      <div class="arrow">→</div>
+      <div class="live"><span class="role">TDD</span><span class="act">writing the test suite…</span><span class="spark"></span></div>
+      <div class="arrow">→</div>
+      <div class="live"><span class="role">Reviewer</span><span class="act">code quality ✓ done</span><span class="spark done"></span></div>
+      <div class="arrow">→</div>
+      <div class="live"><span class="role">Builder</span><span class="act">shipping build ✓</span><span class="spark done"></span></div>
     </div>
-    <div class="arrow">▼</div>
     <div class="cards">
       <div class="code"><b>plan.md</b><span>spec · goals · milestones</span></div>
-      <div class="code"><b>api.yaml</b><span>5 endpoints · auth · schema</span></div>
+      <div class="code"><b>main.py</b><span>API + tests passing</span></div>
       <div class="code"><b>index.html</b><span>1 credit · 8 agents · live</span></div>
+    </div>
+  </section>
+
+  <!-- FROM IDEA TO RUNNING REPO (design-preview B) -->
+  <section class="land-section" id="howitworks">
+    <div class="wrap">
+      <h2 class="sec-title" data-i18n="steps_title">From idea to running repo</h2>
+      <p class="sec-sub" data-i18n="steps_sub">No prompts, no boilerplate, no &ldquo;hello world&rdquo;. A squad of specialists executes your goal end-to-end.</p>
+      <div class="steps">
+        <div class="step"><div class="num">1</div><h3 data-i18n="step1_t">Describe the goal</h3><p data-i18n="step1_d">One sentence in plain language. Attach files if you want the squad to build on them. Then the squad does the rest.</p></div>
+        <div class="step"><div class="num">2</div><h3 data-i18n="step2_t">Swarm plans &amp; builds</h3><p data-i18n="step2_d">Planner, Architect, TDD, Reviewer and Builder execute in lanes on a live board you can watch.</p></div>
+        <div class="step"><div class="num">3</div><h3 data-i18n="step3_t">Review &amp; take it</h3><p data-i18n="step3_d">Browse generated code, tests and docs in the workspace, then export or relaunch with new goals.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BUILT FOR TEAMS THAT SHIP (design-preview C) -->
+  <section class="land-section">
+    <div class="wrap">
+      <h2 class="sec-title" data-i18n="feat_title">Built for teams that ship</h2>
+      <p class="sec-sub" data-i18n="feat_sub">Everything a modern AI dev platform needs — with sane guardrails.</p>
+      <div class="grid2">
+        <div class="feat"><div class="ic">🛡</div><h3 data-i18n="f1_t">Your keys stay yours</h3><p data-i18n="f1_d">Bring your own Anthropic, OpenAI, Gemini or Kimi key — encrypted on disk, injected only at launch.</p></div>
+        <div class="feat"><div class="ic">⚖</div><h3 data-i18n="f2_t">Fair, predictable pricing</h3><p data-i18n="f2_d">Prepaid credit packs with clear pricing — one credit per launch, Paddle handles sales tax worldwide.</p></div>
+        <div class="feat"><div class="ic">🧪</div><h3 data-i18n="f3_t">TDD from the first line</h3><p data-i18n="f3_d">Tests are written before code, and every change passes a suite of {{ trust_checks }} automated checks.</p></div>
+        <div class="feat"><div class="ic">🔒</div><h3 data-i18n="f4_t">Isolated per project</h3><p data-i18n="f4_d">Each project runs in its own workspace, board and preview — no cross-project contamination.</p></div>
+      </div>
     </div>
   </section>
 
@@ -609,6 +665,15 @@ Bring your own provider key for the strongest output — or a free OpenRouter ke
     <div class="hint" data-i18n="tg_hint">Send your goal to the FluxSwarm Telegram bot and get live swarm results. Link your account so launches run under your credits and plan.</div>
     <div id="tgBody" class="empty" data-i18n="tg_login_hint">Sign in to link Telegram to your account.</div>
   </div>
+
+  <!-- CLOSING CTA (design-preview D) -->
+  <section class="cta-band" aria-label="Start building">
+    <div class="wrap">
+      <h2 data-i18n="cta_title">Your first product is one goal away.</h2>
+      <p data-i18n="cta_sub">Start free with 5 credits — a full agent squad plans, builds and ships while you watch. No card required.</p>
+      <button class="btn" data-onclick="gotoLaunch" data-arg="launch" data-i18n="cta_launch">Start building free →</button>
+    </div>
+  </section>
 </main>
 
 <!-- AUTH MODAL -->
@@ -1163,8 +1228,18 @@ const I18N = {
     header_tag:"A squad of 8 AI agents builds your project on a live board",
     nav_how:"How it works", nav_faq:"FAQ", nav_projects:"History", nav_settings:"Account",
     nav_pricing:"Pricing", nav_ref:"Referrals", nav_byok:"My keys", nav_login:"Log in / Sign up", nav_market:"Marketplace",
-    hero_title:"Launch a project with a <span class=\"grad\">full agent squad</span>", lbl_pname:"Project name", lbl_pgoal:"Build goal (the squad will execute it)",
-    btn_launch:"🚀 Launch squad", btn_demo:"▶ Free Demo",
+    hero_title:"Tell us what to build.<br><span class=\"grad\">We'll build it.</span>", hero_eyebrow:"✦ AI Agents · Multi-agent Swarm <b>Now live</b>", hero_sub:"Turn a one-line goal into a working product — a squad of specialist AI agents plans, codes, tests and ships it while you watch.",
+    btn_launch:"🚀 Launch squad", btn_demo:"▶ Watch the live demo", cta_launch:"Start building free →", fine_hint:"No credit card required — 5 free credits to start · your keys, your calls", lbl_pname:"Project name", lbl_pgoal:"Build goal (the squad will execute it)",
+    steps_title:"From idea to running repo", steps_sub:"No prompts, no boilerplate, no “hello world”. A squad of specialists executes your goal end-to-end.",
+    step1_t:"Describe the goal", step1_d:"One sentence in plain language. Attach files if you want the squad to build on them. Then the squad does the rest.",
+    step2_t:"Swarm plans & builds", step2_d:"Planner, Architect, TDD, Reviewer and Builder execute in lanes on a live board you can watch.",
+    step3_t:"Review & take it", step3_d:"Browse generated code, tests and docs in the workspace, then export or relaunch with new goals.",
+    feat_title:"Built for teams that ship", feat_sub:"Everything a modern AI dev platform needs — with sane guardrails.",
+    f1_t:"Your keys stay yours", f1_d:"Bring your own Anthropic, OpenAI, Gemini or Kimi key — encrypted on disk, injected only at launch.",
+    f2_t:"Fair, predictable pricing", f2_d:"Prepaid credit packs with clear pricing — one credit per launch, Paddle handles sales tax worldwide.",
+    f3_t:"TDD from the first line", f3_d:"Tests are written before code, and every change passes a suite of {{ trust_checks }} automated checks.",
+    f4_t:"Isolated per project", f4_d:"Each project runs in its own workspace, board and preview — no cross-project contamination.",
+    cta_title:"Your first product is one goal away.", cta_sub:"Start free with 5 credits — a full agent squad plans, builds and ships while you watch. No card required.",
     hero_hint:"Each launch uses 1 credit. Sign in to launch — the Demo plan starts with 5 free credits (no card).",
     about_title:"What is <span class=\"grad\">FluxSwarm</span>?",
     about_body:
