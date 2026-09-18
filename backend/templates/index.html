@@ -43,38 +43,53 @@
     --shadow:0 20px 50px rgba(15,23,42,.12);
     --grad:linear-gradient(135deg,#06B6D4,#8B5CF6);
   }
-  *{box-sizing:border-box}
-  h1,h2,h3{font-family:var(--font-display);line-height:1.15}
-  body{margin:0;font-family:var(--font-sans);font-weight:400;background:
-    radial-gradient(900px 420px at 90% -120px,color-mix(in srgb,var(--accent2) 18%,transparent),transparent 60%),
-    radial-gradient(760px 400px at -5% -80px,color-mix(in srgb,var(--accent) 15%,transparent),transparent 60%),
-    var(--bg);background-attachment:fixed;color:var(--text);-webkit-font-smoothing:antialiased;line-height:1.6;transition:background .25s,color .25s}
-  nav{padding:0 20px;height:64px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:color-mix(in srgb,var(--bg) 80%,transparent);position:sticky;top:0;z-index:40;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
-  .nav-logo{height:26px;width:26px;border-radius:8px;object-fit:cover;flex:0 0 auto}
-  nav h1{font-size:18px;margin:0;font-weight:700;letter-spacing:-.2px;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
-  nav .tag{font-size:12px;color:var(--muted)}
-  nav .spacer{flex:1}
-  nav button.nav,nav a.nav{background:transparent;border:1px solid var(--border);color:var(--text);padding:8px 14px;border-radius:9px;cursor:pointer;font-size:13.5px;text-decoration:none;display:inline-block;transition:border-color .15s,color .15s}
-  nav button.nav:hover,nav a.nav:hover{border-color:var(--accent);color:var(--accent)}
+  *{box-sizing:border-box;margin:0;padding:0}
+  h1,h2,h3{font-family:'Space Grotesk','Inter',ui-sans-serif,system-ui,Tahoma,Arial;line-height:1.15}
+  a{color:var(--accent);text-decoration:none}
+  .muted{color:var(--muted)}
+  body{margin:0;font-family:'Inter',ui-sans-serif,system-ui,'Segoe UI',Tahoma,Arial;font-weight:400;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;line-height:1.6;overflow-x:hidden;transition:background .25s,color .25s}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+  select{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:11px;padding:11px 13px;font-size:14px;font-family:inherit;transition:border-color .15s}
+  select:focus{border-color:var(--accent);outline:none}
+  /* ---------- buttons (design-preview) ---------- */
+  .btn{display:inline-flex;align-items:center;gap:8px;height:46px;padding:0 22px;border-radius:10px;font-weight:600;font-size:15px;cursor:pointer;border:none;transition:transform .12s,box-shadow .12s}
+  .btn:hover{transform:translateY(-1px)}
+  .btn.primary{background:var(--grad);color:var(--btn-text);box-shadow:0 8px 24px rgba(34,211,238,.25)}
+  .btn.ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
+  button.btn{font-family:inherit}
+  /* ---------- nav (design-preview A/B) ---------- */
+  nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);background:color-mix(in srgb,var(--bg) 78%,transparent);border-bottom:1px solid var(--border)}
+  .nav{display:flex;align-items:center;gap:26px;height:64px;overflow-x:auto;scrollbar-width:none}
+  .nav::-webkit-scrollbar{display:none}
+  .logo{display:flex;align-items:center;gap:9px;font-weight:700;font-size:18px;font-family:'Space Grotesk',sans-serif;white-space:nowrap}
+  .logo .dot{width:26px;height:26px;border-radius:8px;background:var(--grad);display:grid;place-items:center;color:#fff;font-size:14px;flex:0 0 auto}
+  .logo h1{margin:0;font-size:18px;font-weight:700;color:var(--text)}
+  .nav a.l,.nav button.l{background:none;border:0;padding:6px 2px;border-radius:6px;color:var(--muted);font-size:14px;font-family:inherit;cursor:pointer;text-decoration:none;transition:color .15s;white-space:nowrap}
+  .nav a.l:hover,.nav button.l:hover{color:var(--accent)}
+  .nav .right{margin-left:auto;display:flex;gap:12px;align-items:center;white-space:nowrap}
   .theme-btn{height:38px;padding:0 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;font-size:13px}
   .theme-btn:hover{border-color:var(--accent);color:var(--accent)}
-  main{padding:30px 20px 60px;max-width:1180px;margin:0 auto}
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px;margin-bottom:18px}
-  .badge{display:inline-block;font-size:12px;color:var(--muted);border:1px solid var(--border);border-radius:999px;padding:5px 11px;background:var(--panel2);white-space:nowrap}
+  #userPill{display:inline-flex;align-items:center}
+  #userPill .userbox{flex-direction:row;gap:10px}
+  main{max-width:1180px;margin:0 auto;padding:0 24px 60px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:26px;margin-bottom:18px;transition:border-color .2s,box-shadow .2s}
+  .card:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--border))}
+  .badge{display:inline-block;font-size:12px;color:var(--text);border:1px solid var(--border);border-radius:999px;padding:6px 12px;background:var(--surface2);white-space:nowrap}
   label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
-  input,textarea{width:100%;background:var(--panel2);border:1px solid var(--border);color:var(--fg);border-radius:var(--radius-sm);padding:11px 13px;font-size:14px;font-family:inherit;transition:border-color .15s}
+  input,textarea{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:11px;padding:11px 13px;font-size:14px;font-family:inherit;transition:border-color .15s}
   input:focus,textarea:focus{border-color:var(--accent);outline:none}
   textarea{min-height:80px;resize:vertical}
-  pre{white-space:pre-wrap;word-break:break-word;background:var(--panel2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:12px;line-height:1.5;overflow:auto;max-height:520px}
-  button.primary{margin-top:12px;background:var(--grad);color:var(--btn-text);border:0;border-radius:var(--radius-sm);padding:12px 22px;font-weight:700;cursor:pointer;font-size:14px;box-shadow:0 8px 24px rgba(34,211,238,.25);transition:transform .12s,box-shadow .15s}
+  pre{white-space:pre-wrap;word-break:break-word;background:var(--surface2);border:1px solid var(--border);border-radius:11px;padding:14px;font-size:12px;line-height:1.5;overflow:auto;max-height:520px}
+  button.primary{margin-top:12px;background:var(--grad);color:var(--btn-text);border:0;border-radius:11px;padding:12px 22px;font-weight:600;font-size:15px;cursor:pointer;box-shadow:0 8px 24px rgba(34,211,238,.25);transition:transform .12s,box-shadow .15s;display:inline-flex;align-items:center;gap:8px}
   button.primary:hover{box-shadow:0 12px 30px rgba(124,58,237,.35);transform:translateY(-1px)}
   button.primary:active{transform:translateY(1px)}
   button.primary:disabled{opacity:.55;cursor:not-allowed;box-shadow:none}
-  button.danger{border:1px solid var(--red);color:var(--red);background:transparent;border-radius:var(--radius-sm);padding:9px 15px;cursor:pointer;font-size:13px}
-  button.danger:hover{background:var(--red);color:#fff}
-  button.ghost{background:transparent;border:1px solid var(--border);color:var(--fg);border-radius:var(--radius-sm);padding:9px 15px;cursor:pointer;transition:border-color .15s,color .15s}
+  button.danger{border:1px solid var(--bad);color:var(--bad);background:transparent;border-radius:11px;padding:10px 16px;cursor:pointer;font-size:13px}
+  button.danger:hover{background:var(--bad);color:#fff}
+  button.ghost{background:transparent;border:1px solid var(--border);color:var(--text);border-radius:11px;padding:10px 16px;cursor:pointer;font-size:13px;transition:border-color .15s,color .15s}
   button.ghost:hover{border-color:var(--accent);color:var(--accent)}
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px}
+  #plansGrid{grid-template-columns:repeat(3,1fr);align-items:start}
   .agent{background:var(--surface2);border:1px solid var(--border);border-radius:14px;padding:16px;transition:border-color .15s,transform .12s}
   .agent:hover{border-color:var(--accent);transform:translateY(-2px)}
   .agent .role{font-size:12px;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.4px}
@@ -136,20 +151,40 @@
     .s-running{animation:none}
     *{animation:none!important;transition:none!important}
   }
+  @media (max-width:1080px){
+    #plansGrid{grid-template-columns:1fr 1fr}
+    .nav{overflow-x:auto}
+  }
   @media (max-width:900px){
     .grid{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
-    nav .tag{display:none}
+    .nav a.l{display:none}
+    #plansGrid{grid-template-columns:1fr}
+    .hero{padding:72px 0 32px}
+    .stage{padding:16px}
+  }
+  @media (max-width:760px){
+    .hero-title{font-size:clamp(32px,8vw,46px)}
+    .stage .cards{grid-template-columns:1fr}
   }
   @media (max-width:720px){
     .grid{grid-template-columns:1fr}
     .row{flex-direction:column;align-items:stretch}
     .hero-title{font-size:clamp(30px,8vw,40px)}
     .plan{width:100%}
+    .cta-row{flex-direction:column}
+    .cta-row .btn{width:100%;justify-content:center}
+    .panel-form{padding:20px}
   }
   @media (max-width:640px){
-    nav{padding:0 12px;gap:8px;height:56px}
-    main{padding:16px 12px 40px}
+    nav,.nav{height:56px}
+    main{padding:0 16px 40px}
     .card{padding:16px}
+    .hero{padding:56px 0 24px}
+    .hero-sub{font-size:16px}
+    .trust{gap:10px;flex-direction:column;align-items:flex-start}
+    .logo h1{font-size:16px}
+    .nav .right{gap:8px}
+    .theme-btn{padding:0 10px;font-size:12px}
   }
   /* ===== dashboard tiles (design-preview C) ===== */
   .pan{border:1px solid var(--border);border-radius:16px;overflow:hidden;background:var(--surface);display:flex;flex-direction:column}
@@ -166,18 +201,39 @@
   .bar i{display:block;height:100%;background:var(--grad);border-radius:99px}
   .counter{font-size:12.5px;color:var(--muted)}
   /* ===== hero redesign (design-preview) ===== */
-  .hero{position:relative;overflow:hidden}
-  .hero::before{content:"";position:absolute;inset:0;pointer-events:none;background:
-    radial-gradient(600px 300px at 80% -20px,color-mix(in srgb,var(--accent2) 20%,transparent),transparent 65%),
-    radial-gradient(500px 280px at 8% -30px,color-mix(in srgb,var(--accent) 16%,transparent),transparent 65%)}
-  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:700;letter-spacing:.4px;color:var(--muted);border:1px solid var(--border);background:var(--surface);border-radius:999px;padding:6px 14px;margin:0 0 14px}
+  /* ===== hero section (design-preview A) ===== */
+  .hero{position:relative;overflow:hidden;isolation:isolate;padding:88px 0 40px;max-width:780px;margin:0 auto;text-align:center}
+  .hero::before{content:"";position:absolute;inset:-20px;pointer-events:none;background:
+    radial-gradient(600px 340px at 18% 0%,color-mix(in srgb,var(--accent2) 20%,transparent),transparent 70%),
+    radial-gradient(520px 300px at 82% 8%,color-mix(in srgb,var(--accent) 18%,transparent),transparent 70%);z-index:-1}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--muted);border:1px solid var(--border);background:var(--surface);border-radius:999px;padding:7px 16px;margin:0 0 22px}
   .eyebrow b{color:var(--accent);font-weight:600}
-  .hero-title{font-family:var(--font-display);font-weight:700;letter-spacing:-.02em;line-height:1.1;font-size:clamp(34px,5.2vw,54px);margin:0 0 12px;max-width:20ch}
+  .hero-title{font-family:'Space Grotesk',sans-serif;font-weight:700;letter-spacing:-.02em;line-height:1.1;font-size:clamp(38px,6vw,66px);margin:0 auto 18px;max-width:820px}
   .hero-title .grad{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
-  .hero-sub{color:var(--muted);font-size:17px;margin:0 0 22px;max-width:60ch;line-height:1.65}
-  .trust{display:flex;gap:22px;justify-content:flex-start;flex-wrap:wrap;margin-top:16px;font-size:12.5px;color:var(--muted)}
+  .hero-sub{color:var(--muted);font-size:18px;margin:0 auto 30px;max-width:56ch;line-height:1.65}
+  .cta-row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:8px}
+  .fine{font-size:14px;color:var(--muted);margin:16px 0 0}
+  .trust{display:flex;gap:22px;justify-content:center;flex-wrap:wrap;margin-top:24px;font-size:12.5px;color:var(--muted)}
   .trust span{display:inline-flex;gap:7px;align-items:center}
   .check{color:var(--ok);font-weight:700}
+  .panel-form{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:26px;margin-top:40px;text-align:left;box-shadow:var(--shadow)}
+  .panel-form .row button.primary{margin-top:0}
+  /* ===== live swarm visual (design-preview A) ===== */
+  .stage{border:1px solid var(--border);border-radius:16px;background:linear-gradient(180deg,var(--surface),var(--surface2));padding:18px 20px;margin:18px 0 34px;box-shadow:var(--shadow)}
+  .stage-head{display:flex;align-items:center;gap:14px;font-size:13px;color:var(--muted);margin-bottom:14px}
+  .stage-head .dots{display:inline-flex;gap:5px}
+  .stage-head .dots i{width:9px;height:9px;border-radius:50%;background:var(--border)}
+  .stage-head .dots i:first-child{background:var(--bad)}
+  .stage-head .dots i:nth-child(2){background:var(--warn)}
+  .stage-head .dots i:last-child{background:var(--ok)}
+  .lives{display:flex;flex-direction:column;gap:8px}
+  .live{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:9px 12px}
+  .spark{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px color-mix(in srgb,var(--accent) 80%,transparent);flex:0 0 auto}
+  .arrow{text-align:center;color:var(--accent);font-size:13px;margin:10px 0 12px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+  .code{background:#080c14;border:1px solid var(--border);border-radius:11px;padding:12px 14px;display:flex;flex-direction:column;gap:3px}
+  .code b{font-family:'Space Grotesk',sans-serif;font-size:13px;color:#7dd3fc}
+  .code span{font-size:11px;color:var(--muted)}
   .squad-strip{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
   .chip{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--text);border:1px solid var(--border);background:var(--surface2);border-radius:999px;padding:6px 12px}
   .chip .cdot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px color-mix(in srgb,var(--ok) 70%,transparent)}
@@ -198,7 +254,26 @@
   .plan ul{list-style:none;padding:0;margin:12px 0 16px;font-size:13.5px;color:var(--text);flex:1}
   .plan li{padding:4px 0;color:var(--muted)}
   .plan li .tick{color:var(--ok);margin-right:8px;font-weight:700}
-  .pbtn{width:100%;text-align:center;margin-top:auto}
+  .pbtn{width:100%;text-align:center;justify-content:center;margin-top:auto}
+  /* ===== pricing grid (design-preview B) ===== */
+  #plansGrid{grid-template-columns:repeat(3,1fr);align-items:stretch}
+  .pc{position:relative;display:flex;flex-direction:column;background:var(--surface2);border:1px solid var(--border);border-radius:16px;padding:26px 22px 20px;margin-bottom:0;transition:border-color .2s,transform .2s,box-shadow .2s}
+  .pc:hover{transform:translateY(-3px);box-shadow:var(--shadow)}
+  .pc.hot{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 18px 44px color-mix(in srgb,var(--accent) 16%,transparent)}
+  .pc .tag{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--grad);color:var(--btn-text);font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;padding:5px 14px;border-radius:999px;white-space:nowrap;box-shadow:0 6px 18px rgba(0,0,0,.3)}
+  .pc .name{font-family:'Space Grotesk',sans-serif;font-size:17px;font-weight:700}
+  .pc .for{font-size:13px;color:var(--muted);margin-top:4px}
+  .pc .price{display:flex;align-items:baseline;gap:6px;margin:14px 0 2px;font-family:'Space Grotesk',sans-serif}
+  .pc .price .sym{font-size:18px;font-weight:600;color:var(--muted)}
+  .pc .price .a{font-size:42px;font-weight:800;letter-spacing:-2px;line-height:1}
+  .pc .price .per{font-size:14px;color:var(--muted);font-weight:500}
+  .pc .per-line{font-size:13px;color:var(--accent);font-weight:600;margin:2px 0 0}
+  .pc .save{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.6px;color:var(--hot);border:1px solid color-mix(in srgb,var(--hot) 55%,var(--border));border-radius:999px;padding:3px 9px;margin-top:8px}
+  .pc ul.list{list-style:none;padding:0;margin:16px 0 20px;font-size:13.5px;flex:1;display:flex;flex-direction:column;gap:9px}
+  .pc ul.list li{position:relative;padding-left:24px;color:var(--text)}
+  .pc ul.list li::before{content:"✓";position:absolute;left:0;top:0;color:var(--ok);font-weight:700}
+  .pc ul.list li.off{color:var(--muted)}
+  .pc ul.list li.off::before{content:"–";color:var(--border)}
   /* ===== credits meter ===== */
   .userbox{display:inline-flex;flex-direction:column;gap:4px;font-size:12px}
   .userbox .ub-line{display:flex;justify-content:space-between;gap:10px;align-items:center}
@@ -240,72 +315,98 @@
 <body>
 <a class="skip-link" href="#main" data-i18n="skip_link">Skip to content</a>
 <nav role="navigation" aria-label="FluxSwarm">
-  <img class="nav-logo" src="/static/brand/logo.jpg" alt="" width="26" height="26" />
-  <h1>FluxSwarm</h1>
-  <span class="tag" data-i18n="header_tag">A squad of 8 AI agents builds your project on a live board</span>
-  <span class="spacer"></span>
-  <a class="nav" href="/how-it-works" data-i18n="nav_how">How it works</a>
-  <a class="nav" href="/faq" data-i18n="nav_faq">FAQ</a>
-  <button class="nav" id="navPricing" data-onclick="gotoSection" data-arg="pricing" data-i18n="nav_pricing">Pricing</button>
-  <button class="nav" id="navRef" data-onclick="gotoSection" data-arg="referrals" data-i18n="nav_ref">Referrals</button>
-  <button class="nav" id="navByok" data-onclick="gotoSection" data-arg="byok" data-i18n="nav_byok">My keys</button>
-  <button class="nav" id="navAgents" data-onclick="gotoSection" data-arg="agents" data-i18n="nav_agents">Agents</button>
-  <button class="nav" id="navMarket" data-onclick="gotoSection" data-arg="market" data-i18n="nav_market">Marketplace</button>
-  <button class="nav" id="navProjects" data-onclick="gotoSection" data-arg="projects" data-i18n="nav_projects">History</button>
-  <button class="nav" id="navSettings" data-onclick="gotoSection" data-arg="settings" data-i18n="nav_settings">Account</button>
-  <span id="userPill" class="hidden"></span>
-  <button class="theme-btn" id="themeBtn" data-onclick="toggleTheme" title="Toggle dark/light theme" aria-label="Toggle dark/light theme">☀️ Light</button>
-  <button class="nav" id="navLogin" data-onclick="navLoginClick" data-i18n="nav_login">Log in / Sign up</button>
+  <div class="wrap nav">
+    <div class="logo"><span class="dot" aria-hidden="true">⚡</span><h1>FluxSwarm</h1></div>
+    <a class="l" href="/how-it-works" data-i18n="nav_how">How it works</a>
+    <a class="l" href="/faq" data-i18n="nav_faq">FAQ</a>
+    <button class="l" id="navPricing" data-onclick="gotoSection" data-arg="pricing" data-i18n="nav_pricing">Pricing</button>
+    <button class="l" id="navAgents" data-onclick="gotoSection" data-arg="agents" data-i18n="nav_agents">Agents</button>
+    <button class="l" id="navMarket" data-onclick="gotoSection" data-arg="market" data-i18n="nav_market">Marketplace</button>
+    <button class="l" id="navProjects" data-onclick="gotoSection" data-arg="projects" data-i18n="nav_projects">History</button>
+    <button class="l" id="navRef" data-onclick="gotoSection" data-arg="referrals" data-i18n="nav_ref">Referrals</button>
+    <button class="l" id="navByok" data-onclick="gotoSection" data-arg="byok" data-i18n="nav_byok">My keys</button>
+    <button class="l" id="navSettings" data-onclick="gotoSection" data-arg="settings" data-i18n="nav_settings">Account</button>
+    <div class="right">
+      <span id="userPill" class="hidden"></span>
+      <button class="theme-btn" id="themeBtn" data-onclick="toggleTheme" title="Toggle dark/light theme" aria-label="Toggle dark/light theme">☀️ Light</button>
+      <button class="btn ghost" id="navLogin" data-onclick="navLoginClick" data-i18n="nav_login">Log in / Sign up</button>
+    </div>
+  </div>
 </nav>
 <main id="main" role="main">
 
   <!-- HERO / CREATE -->
-  <div class="card hero" id="hero">
+  <section class="hero" id="hero">
     <p class="eyebrow">⚡ AI agent squad</p>
     <h2 class="hero-title" data-i18n-html="hero_title">Launch a project with a <span class="grad">full agent squad</span></h2>
     <p class="hero-sub">Type a goal and watch Planner, Architect, DevOps, TDD, Reviewer &amp; Builder plan, build, test and assemble it on a live board — in minutes, not weeks.</p>
-    <div class="row">
-      <div style="flex:1;min-width:200px">
-        <label for="pname" data-i18n="lbl_pname">Project name</label>
-        <input id="pname" placeholder="e.g. Landing page" />
-      </div>
-      <div style="min-width:0;flex:2">
-        <label for="pgoal" data-i18n="lbl_pgoal">Build goal (the squad will execute it)</label>
-        <div style="display:flex;gap:8px;align-items:stretch">
-          <textarea id="pgoal" placeholder="Build a web app ... produced files land in your workspace and render live under /p/" style="flex:1"></textarea>
-          <button class="ghost" id="stageBtn" data-onclick="stagePick" title="Attach files (PDF, images, ZIP, code) so the squad builds on them" style="min-width:46px;white-space:nowrap">+</button>
-        </div>
-        <input type="file" id="stageInput" accept=".pdf,.zip,.txt,.md,.csv,.json,image/*,text/*,application/pdf,application/zip" multiple style="display:none" />
-        <div id="stageChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
-      </div>
+    <div class="cta-row">
+      <button class="btn primary" data-onclick="gotoLaunch" data-arg="launch" data-i18n="cta_launch">⚡ Build with the swarm</button>
+      <button class="btn ghost" data-onclick="launchDemo" data-i18n="btn_demo">▶ Free Demo</button>
+      <button class="btn ghost" data-onclick="pickZip">📦 Analyze project ZIP</button>
     </div>
-    <div class="row">
-      <button class="primary" id="createBtn" data-onclick="createProject" data-i18n="btn_launch">🚀 Launch squad</button>
-      <button class="ghost" data-onclick="launchDemo" data-i18n="btn_demo">▶ Free Demo</button>
-      <button class="ghost" data-onclick="pickZip">📦 Analyze project ZIP</button>
-      <input type="file" id="zipInput" accept=".zip,application/zip" style="display:none" />
-    </div>
-    <div class="squad-strip" aria-hidden="true">
-      <span class="chip"><span class="cdot"></span>Planner</span>
-      <span class="chip"><span class="cdot run"></span>Architect</span>
-      <span class="chip"><span class="cdot run"></span>DevOps</span>
-      <span class="chip"><span class="cdot"></span>TDD</span>
-      <span class="chip"><span class="cdot"></span>Reviewer</span>
-      <span class="chip"><span class="cdot run"></span>Builder</span>
-    </div>
-    <div class="row" style="gap:8px;margin-top:14px">
-      <span class="badge">🧪 Test-driven — every change ships through a CI suite of {{ trust_checks }} automated checks (live count, {{ trust_checks_date }})</span>
-      <span class="badge">🔒 Built for GDPR &amp; CCPA compliance</span>
-      <span class="badge">🛡️ Output scanning — prompt-injection &amp; secret-leak guardrails</span>
-      <span class="badge">👑 BYOK — your keys, your calls</span>
-    </div>
+    <p class="fine" data-i18n="fine_hint">No credit card — 5 free credits on the Demo plan · your keys, your calls</p>
     <div class="trust">
       <span><i class="check">✓</i> {{ trust_checks }} automated checks</span>
       <span><i class="check">✓</i> Payments by Paddle</span>
       <span><i class="check">✓</i> 1 credit per launch</span>
     </div>
-    <div class="hint" id="heroHint" data-i18n="hero_hint">Each launch uses 1 credit. Sign in to launch — the Demo plan starts with 5 free credits (no card).</div>
-  </div>
+    <div class="panel-form" id="launch">
+      <div class="row">
+        <div style="flex:1;min-width:200px">
+          <label for="pname" data-i18n="lbl_pname">Project name</label>
+          <input id="pname" placeholder="e.g. Landing page" />
+        </div>
+        <div style="min-width:0;flex:2">
+          <label for="pgoal" data-i18n="lbl_pgoal">Build goal (the squad will execute it)</label>
+          <div style="display:flex;gap:8px;align-items:stretch">
+            <textarea id="pgoal" placeholder="Build a web app ... produced files land in your workspace and render live under /p/" style="flex:1"></textarea>
+            <button class="ghost" id="stageBtn" data-onclick="stagePick" title="Attach files (PDF, images, ZIP, code) so the squad builds on them" style="min-width:46px;white-space:nowrap">+</button>
+          </div>
+          <input type="file" id="stageInput" accept=".pdf,.zip,.txt,.md,.csv,.json,image/*,text/*,application/pdf,application/zip" multiple style="display:none" />
+          <div id="stageChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
+        </div>
+      </div>
+      <div class="row">
+        <button class="primary" id="createBtn" data-onclick="createProject" data-i18n="btn_launch">🚀 Launch squad</button>
+        <input type="file" id="zipInput" accept=".zip,application/zip" style="display:none" />
+      </div>
+      <div class="squad-strip" aria-hidden="true">
+        <span class="chip"><span class="cdot"></span>Planner</span>
+        <span class="chip"><span class="cdot run"></span>Architect</span>
+        <span class="chip"><span class="cdot run"></span>DevOps</span>
+        <span class="chip"><span class="cdot"></span>TDD</span>
+        <span class="chip"><span class="cdot"></span>Reviewer</span>
+        <span class="chip"><span class="cdot run"></span>Builder</span>
+      </div>
+      <div class="row" style="gap:8px;margin-top:14px">
+        <span class="badge">🧪 Test-driven — every change ships through a CI suite of {{ trust_checks }} automated checks (live count, {{ trust_checks_date }})</span>
+        <span class="badge">🔒 Built for GDPR &amp; CCPA compliance</span>
+        <span class="badge">🛡️ Output scanning — prompt-injection &amp; secret-leak guardrails</span>
+        <span class="badge">👑 BYOK — your keys, your calls</span>
+      </div>
+      <div class="hint" id="heroHint" data-i18n="hero_hint">Each launch uses 1 credit. Sign in to launch — the Demo plan starts with 5 free credits (no card).</div>
+    </div>
+  </section>
+
+  <!-- LIVE SWARM VISUAL (design-preview A) -->
+  <section class="stage" aria-hidden="true">
+    <div class="stage-head">
+      <span class="dots"><i></i><i></i><i></i></span>
+      <span class="muted">FluxSwarm — live run N° K-2026-051</span>
+    </div>
+    <div class="lives">
+      <div class="live"><span class="spark"></span>Planner — frontend spec ready</div>
+      <div class="live"><span class="spark"></span>Architect — API contract locked</div>
+      <div class="live"><span class="spark"></span>DevOps — CI pipeline deploying</div>
+    </div>
+    <div class="arrow">▼</div>
+    <div class="cards">
+      <div class="code"><b>plan.md</b><span>spec · goals · milestones</span></div>
+      <div class="code"><b>api.yaml</b><span>5 endpoints · auth · schema</span></div>
+      <div class="code"><b>index.html</b><span>1 credit · 8 agents · live</span></div>
+    </div>
+  </section>
 
   <!-- WHAT IS FLUXSWARM -->
   <div class="card" id="about">
@@ -560,9 +661,10 @@ function dismissConsent(){localStorage.setItem("fs-consent","1");document.getEle
 (function initConsent(){if(!localStorage.getItem("fs-consent")){document.getElementById("consentBar").classList.add("show");}}());
 (function initTheme(){const t=localStorage.getItem("fs-theme");if(t==="light"){document.documentElement.setAttribute("data-theme","light");const b=document.getElementById("themeBtn");if(b)b.textContent="🌙 Dark";}}());
 function toggleTheme(){const cur=document.documentElement.getAttribute("data-theme")==="light";if(cur){document.documentElement.removeAttribute("data-theme");localStorage.setItem("fs-theme","");document.getElementById("themeBtn").textContent="☀️ Light";}else{document.documentElement.setAttribute("data-theme","light");localStorage.setItem("fs-theme","light");document.getElementById("themeBtn").textContent="🌙 Dark";}}
+  function gotoLaunch(ev){const el=document.getElementById(ev.currentTarget.getAttribute("data-arg")||"launch");if(!el)return;el.scrollIntoView({behavior:"smooth",block:"center"});const inp=el.querySelector("#pname");if(inp)setTimeout(()=>inp.focus(),350);}
 
 async function loadSquad(){const g=document.getElementById("squadGrid");g.innerHTML='<div class="empty">Loading squad…</div>';try{const r=await fetch(API+"/api/squad");const d=await r.json();g.innerHTML="";[...d.workers,d.verifier,d.synthesizer].forEach(a=>{const div=document.createElement("div");div.className="agent";div.innerHTML=`<div class="role">${esc(a.role)}</div><div class="name">${esc(a.display||a.profile)}</div><div class="skills">${t("skills_lbl")} ${esc(a.skills.join(", "))}</div>`;g.appendChild(div);});}catch(e){g.innerHTML='<div class="empty">Could not load squad</div>';}}
-async function loadPlans(){const g=document.getElementById("plansGrid");g.innerHTML='<div class="empty">Loading plans…</div>';try{const r=await fetch(API+"/api/plans");const d=await r.json();g.innerHTML="";d.forEach(p=>{const div=document.createElement("div");div.className="plan"+(p.id==="pro"?" best":"");div.innerHTML=`${p.id==="pro"?'<div class="hot">MOST POPULAR</div>':""}<div class="pname">${esc(p.name)}</div><div class="price">$${p.price}<small> / ${t("per_pack")}</small></div><div class="credit">${fmt("credits_line",p.credits,p.parallel)}</div><ul><li><span class="tick">✓</span>${t("desc_"+p.id)}</li><li><span class="tick">✓</span>${t("feat_full")}</li><li><span class="tick">✓</span>${t("feat_credit")}</li><li><span class="tick">✓</span>${t("feat_live")}</li><li><span class="tick">✓</span>${t("feat_tg")}</li></ul><button class="ghost pbtn" data-onclick="subscribe" data-arg="${p.id}">${p.price==0?t("use_free"):t("subscribe_btn")}</button>`;g.appendChild(div);});}catch(e){g.innerHTML='<div class="empty">Could not load plans</div>';}}
+async function loadPlans(){const g=document.getElementById("plansGrid");g.innerHTML='<div class="empty">Loading plans…</div>';try{const r=await fetch(API+"/api/plans");const d=await r.json();g.innerHTML="";d.forEach(p=>{const div=document.createElement("div");div.className="pc"+(p.id==="pro"?" hot":"");div.innerHTML=`${p.id==="pro"?'<div class="tag">MOST POPULAR</div>':""}<div class="name">${esc(p.name)}</div><div class="for">${t("desc_"+p.id)}</div><div class="price"><span class="sym">$</span><span class="a">${p.price}</span><span class="per">/ ${t("per_pack")}</span></div><div class="per-line">${fmt("credits_line",p.credits,p.parallel)}</div><ul class="list"><li>${t("feat_full")}</li><li>${t("feat_credit")}</li><li>${t("feat_live")}</li><li>${t("feat_tg")}</li></ul><button class="btn pbtn ${p.price==0?"ghost":"primary"}" data-onclick="subscribe" data-arg="${p.id}">${p.price==0?t("use_free"):t("subscribe_btn")}</button>`;g.appendChild(div);});}catch(e){g.innerHTML='<div class="empty">Could not load plans</div>';}}
 
 function setUser(u){currentUser=u;const pill=document.getElementById("userPill");pill.classList.remove("hidden");const pct=(u.credits>=9999)?100:Math.min(100,Math.max(4,u.credits));pill.innerHTML=`<span class="userbox"><span class="ub-line"><b>${esc(u.name)}</b><span class="ub-plan">${esc(u.plan)}</span></span><span class="ub-line"><span>${u.credits} ${t("creds")}</span><span class="credbar"><i style="width:${pct}%"></i></span></span></span>`;document.getElementById("navLogin").textContent=t("logout");document.getElementById("heroHint").textContent=t("loggedin_hint");loadReferrals();loadByok();loadTelegram();loadProjects();loadSettings();}
 function clearUser(){const tk=token;currentUser=null;token=null;try{localStorage.removeItem("token");}catch(e){}document.getElementById("userPill").classList.add("hidden");document.getElementById("navLogin").textContent=t("nav_login");document.getElementById("heroHint").textContent=t("hero_hint");document.getElementById("projectsList").innerHTML='<div class="empty">'+t("projects_login_empty")+'</div>';document.getElementById("settInfo").classList.remove("hidden");document.getElementById("settInfo").textContent=t("settings_login_empty");document.getElementById("settBody").classList.add("hidden");loadTelegram();if(tk){try{fetch(API+"/api/auth/logout",{method:"POST",headers:{Authorization:"Bearer "+tk}}).catch(()=>{});}catch(e){}}}
