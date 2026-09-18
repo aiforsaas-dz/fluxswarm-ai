@@ -254,6 +254,72 @@
   .cta-band p{margin:0 0 var(--s5);color:#1f3a4a;font-weight:500}
   .cta-band .btn{background:#ffffff;color:#04121c;height:48px;padding:0 var(--s7);border-radius:var(--r-md);font-weight:700;box-shadow:0 10px 26px rgba(0,0,0,.22)}
   .cta-band .btn:hover{box-shadow:0 14px 32px rgba(0,0,0,.28)}
+  /* ===== dashboard shell (design-preview C) ===== */
+  .app-shell{display:grid;grid-template-columns:236px 1fr;align-items:start;gap:0;margin-top:var(--s8)}
+  @media(max-width:900px){.app-shell{grid-template-columns:56px 1fr}}
+  .app-shell .sidebar{position:sticky;top:76px;border:1px solid var(--border);border-radius:var(--r-xl);background:var(--surface);padding:var(--s4) var(--s3);display:flex;flex-direction:column;gap:6px;box-shadow:var(--shadow)}
+  .app-shell .sidebar .logo{display:flex;align-items:center;gap:9px;font-weight:700;font-size:17px;font-family:var(--font-display);margin:0 0 var(--s4);padding:0 var(--s1)}
+  .app-shell .sidebar .logo .dot{width:27px;height:27px;border-radius:8px;background:var(--grad);display:grid;place-items:center;color:#fff;font-size:15px;flex:0 0 auto}
+  .side-item{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:9px;font-size:14px;color:var(--muted);background:none;border:0;font-family:inherit;text-align:left;cursor:pointer;width:100%}
+  .side-item:hover{background:var(--surface2)}
+  .side-item.on{background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--text);font-weight:600}
+  .side-foot{margin-top:auto;border-top:1px solid var(--border);padding:14px 4px 0;font-size:12.5px;color:var(--muted);line-height:1.6}
+  .dash-main{min-width:0;padding-left:var(--s5)}
+  @media(max-width:900px){.dash-main{padding-left:var(--s3)}}
+  .topbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:0 0 var(--s5)}
+  .topbar h1{font-size:22px;margin:0}
+  .spacer{flex:1}
+  .credits{display:flex;align-items:center;gap:10px;border:1px solid var(--border);background:var(--surface);border-radius:11px;padding:8px 12px;font-size:12.5px}
+  .credits .num{font-family:var(--font-display);font-weight:700;font-size:15px}
+  .credits .bar{width:96px;height:7px;border-radius:99px;background:var(--surface2);overflow:hidden;display:inline-block}
+  .credits .bar i{display:block;height:100%;background:var(--grad);border-radius:99px;transition:width .3s}
+  .board3{display:grid;grid-template-columns:minmax(210px,260px) 1fr minmax(300px,380px);gap:16px;align-items:start}
+  @media(max-width:1080px){.board3{grid-template-columns:1fr}}
+  .pan{border:1px solid var(--border);border-radius:16px;background:var(--surface);overflow:hidden;display:flex;flex-direction:column;box-shadow:var(--shadow)}
+  .pan-head{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--border);font-weight:600;font-size:14.5px}
+  .pan-head .ct{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:0 0 auto}
+  .pan-head .tl{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pan-head .chip{margin-left:0}
+  .pan-body{padding:12px;display:flex;flex-direction:column;gap:10px}
+  .pan-body pre{white-space:pre-wrap;word-break:break-word;margin:0}
+  .pan .new{border:1.5px dashed var(--border);border-radius:12px;padding:12px;text-align:center;color:var(--muted);font-size:14px;font-family:inherit;background:transparent;cursor:pointer;width:calc(100% - 24px);margin:0 12px 12px;transition:border-color .15s,color .15s}
+  .pan .new:hover{border-color:var(--accent);color:var(--accent)}
+  .lanes{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  @media(max-width:760px){.lanes{grid-template-columns:1fr 1fr}}
+  .lane{border-radius:11px;background:var(--surface2);padding:9px;display:flex;flex-direction:column;gap:8px;min-height:150px}
+  .lane h3{font-size:12.5px;font-weight:600;color:var(--muted);display:flex;align-items:center;justify-content:space-between;margin:0}
+  .lane h3 i{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--ok)}
+  .lane-body{display:flex;flex-direction:column;gap:8px}
+  .lane .agent{border:1px solid var(--border);background:var(--surface);border-radius:10px;padding:10px;font-size:12.5px}
+  .lane .agent .r{font-weight:600;display:flex;justify-content:space-between;align-items:center}
+  .lane .agent .s{color:var(--muted);margin-top:3px;font-size:12px}
+  .pulse{animation:pulse 1.2s infinite}
+  .st-plan{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}
+  .st-build{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+  .st-done{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
+  .pan .tabs{display:flex;gap:6px;padding:10px 14px 0}
+  .pan .tabs button{border:none;background:transparent;color:var(--muted);font-weight:600;font-size:13px;padding:8px 13px;border-radius:8px;cursor:pointer;font-family:inherit}
+  .pan .tabs button.on{background:var(--surface2);color:var(--text)}
+  .out{font-family:'SF Mono','Cascadia Code','Fira Code',ui-monospace,monospace;font-size:12px;padding:13px;color:var(--accent);background:var(--bg);border:1px solid var(--border);border-radius:11px;white-space:pre-wrap;word-break:break-word;line-height:1.55;max-height:380px;overflow:auto}
+  .dlg{font-size:12.5px;color:var(--muted);font-family:ui-monospace,monospace;border:1px solid var(--border);border-radius:11px;padding:12px;background:var(--bg);display:flex;flex-direction:column;gap:6px}
+  .dlg span:first-child{color:var(--ok);font-weight:600}
+  .logos{display:flex;gap:34px;justify-content:center;align-items:center;flex-wrap:wrap;color:var(--muted);font-weight:700;font-family:var(--font-display);opacity:.75;font-size:16px;letter-spacing:.02em;padding:var(--s7) 0 0}
+  .pricing-head{text-align:center;margin:0 auto var(--s6);max-width:640px}
+  .pricing-head h1{font-size:clamp(28px,4vw,44px);margin:0 0 8px;letter-spacing:-.01em}
+  .pricing-head p{color:var(--muted);margin:0 auto;font-size:16px}
+  .note{text-align:center;margin-top:var(--s5);font-size:13.5px;color:var(--muted)}
+  .note b{color:var(--ok)}
+  .faq-sec{margin:var(--s7) auto 0;max-width:760px}
+  .faq-sec>h2{text-align:center;font-size:28px;margin:0 0 24px}
+  .foot{display:flex;gap:40px;flex-wrap:wrap;justify-content:space-between;padding:var(--s7) 0 var(--s8);max-width:1180px;margin:0 auto}
+  .foot .fbrand{flex:1;min-width:240px;display:flex;flex-direction:column;gap:10px}
+  .foot .fbrand p{color:var(--muted);font-size:13.5px;margin:0;max-width:340px}
+  .foot .fbrand .flinks{display:flex;gap:16px}
+  .foot .fcol{display:flex;flex-direction:column;gap:9px;font-size:13.5px}
+  .foot .fcol h4{font-family:var(--font-display);font-size:15px;margin:0}
+  .foot .fcol a,.foot .fcol button{color:var(--muted);text-align:left;background:none;border:none;padding:0;font-size:13.5px;cursor:pointer;font-family:inherit}
+  .foot .fcol a:hover,.foot .fcol button:hover{color:var(--text)}
+  @media(max-width:720px){.foot{flex-direction:column;gap:24px}}
   .chip{display:inline-flex;align-items:center;gap:var(--s2);font-size:var(--f-xs);color:var(--text);border:1px solid var(--border);background:var(--surface2);border-radius:var(--r-full);padding:var(--s2) var(--s3)}
   .chip .cdot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px color-mix(in srgb,var(--ok) 70%,transparent)}
   .chip .cdot.run{background:var(--blue);animation:pulse 1.5s infinite}
@@ -383,14 +449,8 @@
   <div class="wrap nav">
     <div class="logo"><span class="dot" aria-hidden="true">⚡</span><h1>FluxSwarm</h1></div>
     <a class="l" href="/how-it-works" data-i18n="nav_how">How it works</a>
-    <a class="l" href="/faq" data-i18n="nav_faq">FAQ</a>
     <button class="l" id="navPricing" data-onclick="gotoSection" data-arg="pricing" data-i18n="nav_pricing">Pricing</button>
-    <button class="l" id="navAgents" data-onclick="gotoSection" data-arg="agents" data-i18n="nav_agents">Agents</button>
-    <button class="l" id="navMarket" data-onclick="gotoSection" data-arg="market" data-i18n="nav_market">Marketplace</button>
-    <button class="l" id="navProjects" data-onclick="gotoSection" data-arg="projects" data-i18n="nav_projects">History</button>
-    <button class="l" id="navRef" data-onclick="gotoSection" data-arg="referrals" data-i18n="nav_ref">Referrals</button>
-    <button class="l" id="navByok" data-onclick="gotoSection" data-arg="byok" data-i18n="nav_byok">My keys</button>
-    <button class="l" id="navSettings" data-onclick="gotoSection" data-arg="settings" data-i18n="nav_settings">Account</button>
+    <a class="l" href="/faq" data-i18n="nav_faq">FAQ</a>
     <div class="right">
       <span id="userPill" class="hidden"></span>
       <button class="theme-btn" id="themeBtn" data-onclick="toggleTheme" title="Toggle dark/light theme" aria-label="Toggle dark/light theme">☀️ Light</button>
@@ -506,6 +566,9 @@
     </div>
   </section>
 
+  <!-- TRUSTED BY (design-preview A logos strip — honest, generic) -->
+  <div class="logos" aria-hidden="true">For freelancers&nbsp;·&nbsp;Startups&nbsp;·&nbsp;Agencies&nbsp;·&nbsp;Indie builders</div>
+
   <!-- WHAT IS FLUXSWARM -->
   <div class="card" id="about">
     <h2 class="section-title" data-i18n-html="about_title">What is <span class="grad">FluxSwarm</span>?</h2>
@@ -514,157 +577,200 @@
       Reviewer, Designer, Builder, Auditor — plans, builds, tests, designs, reviews and
       assembles it on a live task
       board you can watch. Generated files land in your project workspace, ready to use.
-Bring your own provider key for the strongest output — or a free OpenRouter key to trial free.
+      Bring your own provider key for the strongest output — or a free OpenRouter key to trial free.
       Each launch is still a single credit.
       1 credit per launch, credits never expire, no monthly fee.
     </p>
   </div>
 
-  <!-- SQUAD -->
-  <div class="card">
-    <h2 class="card-title" data-i18n="squad_title">The Squad</h2>
-    <div class="grid" id="squadGrid"></div>
-  </div>
+  <!-- DASHBOARD SHELL (design-preview C) -->
+  <section class="app-shell" id="dashboard" aria-label="Dashboard">
+    <aside class="sidebar" aria-label="Dashboard navigation">
+      <div class="logo"><span class="dot" aria-hidden="true">⚡</span><span class="sb-txt">FluxSwarm</span></div>
+      <button class="side-item on" data-onclick="gotoSection" data-arg="panProjects"><span>🗂</span><span class="sb-txt">Projects</span></button>
+      <button class="side-item" data-onclick="gotoSection" data-arg="boardCard"><span>🐝</span><span class="sb-txt">Swarm</span></button>
+      <button class="side-item" data-onclick="gotoSection" data-arg="pricing"><span>🏷</span><span class="sb-txt">Billing</span></button>
+      <button class="side-item" data-onclick="gotoSection" data-arg="referrals"><span>📣</span><span class="sb-txt">Referrals</span></button>
+      <button class="side-item" data-onclick="gotoSection" data-arg="byok"><span>🔑</span><span class="sb-txt">My keys</span></button>
+      <button class="side-item" data-onclick="gotoSection" data-arg="agents"><span>🛠</span><span class="sb-txt">Custom agents</span></button>
+      <button class="side-item" data-onclick="gotoSection" data-arg="market"><span>🛒</span><span class="sb-txt">Marketplace</span></button>
+      <button class="side-item" data-onclick="gotoSection" data-arg="settings"><span>⚙️</span><span class="sb-txt">Settings</span></button>
+      <a class="side-item" href="/how-it-works"><span>📖</span><span class="sb-txt">Docs</span></a>
+      <div class="side-foot"><span class="sb-txt" id="sbUser">Sign in to see your plan.</span></div>
+    </aside>
+    <div class="dash-main">
+      <div class="topbar">
+        <h1 id="dashTitle">Projects</h1>
+        <span class="muted" id="dashSub">Live task board</span>
+        <div class="spacer"></div>
+        <div class="credits hidden" id="creditsPill">
+          <span class="muted">Balance</span>
+          <div class="bar"><i id="creditsBar" style="width:4%"></i></div>
+          <span class="num" id="creditsNum">–</span>
+        </div>
+        <button class="theme-btn" data-onclick="toggleTheme" title="Toggle dark/light theme" aria-label="Toggle dark/light theme">☀️&nbsp; Light</button>
+        <button class="btn primary" data-onclick="gotoLaunch" data-arg="launch">+ New project</button>
+      </div>
+      <div class="board3">
+        <!-- COL 1 : projects -->
+        <div class="pan" id="panProjects">
+          <div class="pan-head"><span class="ct" style="background:var(--accent2)"></span><span class="tl">Projects</span></div>
+          <div class="pan-body"><div id="projectsList" class="empty" data-i18n="projects_login_empty">Sign in to see your projects.</div></div>
+          <button class="new" data-onclick="gotoLaunch" data-arg="launch">+ New project</button>
+        </div>
+        <!-- COL 2 : swarm lanes -->
+        <div class="pan" id="boardCard">
+          <div class="pan-head"><span class="ct"></span><span class="tl" id="resTitle2">Swarm</span><span class="chip st-build">● <span id="liveCounter" data-i18n="ws_offline">offline</span></span></div>
+          <div class="pan-body">
+            <div class="lanes">
+              <div class="lane"><h3>PLAN <i style="background:var(--accent)"></i></h3><div class="lane-body"></div></div>
+              <div class="lane"><h3>BUILD <i style="background:var(--accent)"></i></h3><div class="lane-body"></div></div>
+              <div class="lane"><h3>REVIEW <i style="background:var(--warn)"></i></h3><div class="lane-body"></div></div>
+              <div class="lane"><h3>DONE <i style="background:var(--ok)"></i></h3><div class="lane-body"></div></div>
+            </div>
+            <div id="taskList" style="display:none"><div class="empty" data-i18n="board_empty">No swarm started yet. Create a project or try Demo.</div></div>
+            <div class="dlg"><span><span id="lastEventTxt">No launch yet — open a project or try the demo.</span></span></div>
+          </div>
+        </div>
+        <!-- COL 3 : outputs -->
+        <div class="pan" id="results">
+          <div class="pan-head"><span class="ct" style="background:var(--ok)"></span><span class="tl" id="resTitle">Outputs</span></div>
+          <div class="tabs"><button class="on" id="tabFiles" data-onclick="switchWsTab" data-arg="files" data-i18n="tab_files">Files</button><button id="tabLog" data-onclick="switchWsTab" data-arg="log" data-i18n="tab_log">Log</button></div>
+          <div class="pan-body">
+            <div id="wsWrap">
+              <div class="hint" id="resHint" data-i18n="res_hint">Generated files from this board's workspace.</div>
+              <pre id="wsContent" class="out empty">Open a board first — its files appear here.</pre>
+              <button class="btn primary" style="width:100%" id="exportZipBtn" data-onclick="downloadProjectZip">▼ Clone repo (ZIP)</button>
+              <button class="btn ghost" style="width:100%" id="previewBtn" data-onclick="openPreview" data-i18n="preview_btn">👁 Preview in app</button>
+              <button class="btn ghost" style="width:100%" id="previewTabBtn" data-onclick="openPreviewTab" data-i18n="preview_open">Open in new tab</button>
+              <button class="btn ghost" style="width:100%" data-onclick="editProjectModal" id="editProjectBtn">✏ Edit goal</button>
+            </div>
+            <div id="logWrap" style="display:none">
+              <div class="dlg"><span>▲ last event</span><span id="outcomeTxt">No launch yet.</span></div>
+              <h3 class="card-title" id="secTitle" style="font-size:15px">🔒 Security Report (AgentShield)</h3>
+              <div class="hint" id="secHint">Automated security scan of the swarm's output: leaked secrets, prompt injection, common vulnerabilities.</div>
+              <button class="ghost" id="secBtn" data-onclick="runSecurity">Run security scan</button>
+              <div id="secResult"></div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-  <!-- LIVE BOARD -->
-  <div class="card" id="boardCard">
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <h2 class="card-title" data-i18n="board_title">Live task board</h2>
-      <span class="counter" id="liveCounter" data-i18n="ws_offline">Offline</span>
-    </div>
-    <div id="taskList"><div class="empty" data-i18n="board_empty">No swarm started yet. Create a project or try Demo.</div></div>
-    <div id="secResult" style="margin-top:12px"></div>
-    <div class="card" style="margin-top:16px;padding:16px">
-      <h2 class="card-title" id="secTitle">🔒 Security Report (AgentShield)</h2>
-      <div class="hint" id="secHint">Automated security scan of the swarm's output: leaked secrets, prompt injection, common vulnerabilities.</div>
-      <button class="ghost" id="secBtn" data-onclick="runSecurity">Run security scan</button>
-    </div>
-  </div>
+      <!-- SQUAD -->
+      <div class="card" style="margin-top:16px">
+        <h2 class="card-title" data-i18n="squad_title">The Squad</h2>
+        <div class="grid" id="squadGrid"></div>
+      </div>
 
-  <!-- RESULTS / WORKSPACE -->
-  <div class="card hidden" id="results">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-      <h2 class="card-title" id="resTitle">Generated workspace</h2>
-      <div style="display:flex;gap:8px">
-        <button class="ghost" id="previewBtn" data-onclick="openPreview" data-i18n="preview_btn">👁 Preview</button>
-        <button class="ghost" id="previewTabBtn" data-onclick="openPreviewTab" data-i18n="preview_open">Open</button>
-        <button class="ghost" id="exportZipBtn" data-onclick="downloadProjectZip">⬇ ZIP (export)</button>
-        <button class="ghost" data-onclick="editProjectModal" id="editProjectBtn">✏ Edit</button>
+      <!-- REFERRALS -->
+      <div class="card hidden" id="referrals">
+        <h2 class="card-title" data-i18n="ref_title">Referral Program</h2>
+        <div id="refContent"><div class="empty" data-i18n="ref_login_empty">Sign in to see your referral link.</div></div>
+      </div>
+
+      <!-- BYOK -->
+      <div class="card hidden" id="byok">
+        <h2 class="card-title" data-i18n="byok_title">🔑 Your keys (BYOK)</h2>
+        <div class="hint" data-i18n="byok_hint">Add a Claude/GPT/Gemini/Kimi key for stronger output, or a free OpenRouter key (GLM-5.2) to trial it at zero cost — it pays your provider's token rate; FluxSwarm still only charges the 1-credit launch fee. A provider is only used after you accept its terms below. Keys are encrypted at rest and never shown back.</div>
+        <div class="row" style="margin-top:10px">
+          <div style="flex:1;min-width:160px"><label for="byok_provider" data-i18n="lbl_provider">Provider</label>
+            <select id="byok_provider" style="width:100%;background:var(--panel2);border:1px solid var(--border);color:var(--fg);border-radius:10px;padding:10px">
+              <option value="openrouter">OpenRouter (free)</option>
+              <option value="anthropic">Anthropic (Claude)</option>
+              <option value="openai">OpenAI</option>
+              <option value="gemini">Gemini</option>
+              <option value="kimi">Kimi</option>
+            </select>
+          </div>
+          <div style="flex:3;min-width:260px"><label for="byok_token" data-i18n="lbl_key">API key</label>
+            <input id="byok_token" placeholder="sk-..." />
+          </div>
+        </div>
+        <div class="hint" style="margin-top:8px">
+          <label><input type="checkbox" id="byok_agree" checked /> <span data-i18n="byok_agree">I accept this provider's terms (required before launch).</span></label>
+        </div>
+        <button class="primary" data-onclick="saveKey">Save key</button>
+        <div id="byokList" style="margin-top:10px"></div>
+        <div data-i18n="byok_agg_hint" style="font-size:12px;color:var(--muted)">Saved keys are locked to the current provider terms version; accepting a new version refreshes it.</div>
+      </div>
+
+      <!-- CUSTOM AGENTS (P4) -->
+      <div class="card hidden" id="agents">
+        <h2 class="card-title" data-i18n="agents_title">🛠 Custom agents</h2>
+        <div class="hint" data-i18n="agents_hint">Define your own squad members — name, mission and skills — then attach them to any launch. Each custom agent runs as an extra lane and leaves its deliverable in your project workspace.</div>
+        <div class="row" style="margin-top:10px">
+          <div style="flex:1"><label for="ag_name" data-i18n="ag_name">Agent name</label><input id="ag_name" maxlength="80" placeholder="e.g. Security Auditor" /></div>
+          <div style="flex:1"><label for="ag_obj" data-i18n="ag_obj">Mission (what it must produce)</label><input id="ag_obj" maxlength="500" placeholder="Audit the workspace for OWASP Top 10 issues and produce a fixes report" /></div>
+        </div>
+        <label for="ag_skills" data-i18n="ag_skills">Skills (optional, comma separated)</label><input id="ag_skills" maxlength="300" placeholder="security, python, fastapi" />
+        <button class="primary" data-onclick="createAgent" data-i18n="ag_create">➕ Create agent</button>
+        <h3 style="font-size:15px;margin-top:16px" data-i18n="agents_list">My agents</h3>
+        <div class="grid" id="agentGrid"></div>
+      </div>
+
+      <!-- SQUAD MARKETPLACE -->
+      <div class="card hidden" id="market">
+        <h2 class="card-title" data-i18n="market_title">🛒 Squad Marketplace</h2>
+        <div class="hint" data-i18n="market_hint">Publish your agent lineup as a template others buy with credits, or buy a ready-made squad from the community.</div>
+        <div class="row" style="margin-top:10px">
+          <div style="flex:1"><label for="tpl_name" data-i18n="tpl_name">Template name</label><input id="tpl_name" placeholder="e.g. Secure web squad" /></div>
+          <div style="flex:1"><label for="tpl_price" data-i18n="tpl_price">Price (credits)</label><input id="tpl_price" type="number" value="10" /></div>
+        </div>
+        <label for="tpl_desc" data-i18n="tpl_desc">Description</label><textarea id="tpl_desc" placeholder="What does this squad build?"></textarea>
+        <label for="tpl_agents" data-i18n="tpl_agents">Agents (display names, comma separated)</label><input id="tpl_agents" placeholder="Planner, Architect, DevOps, TDD, Reviewer, Designer, Builder, Auditor" />
+        <button class="primary" data-onclick="publishTpl">📦 Publish template</button>
+        <h3 style="font-size:15px;margin-top:16px" data-i18n="market_list">Available templates</h3>
+        <div class="grid" id="tplGrid"></div>
+      </div>
+
+      <!-- SETTINGS / ACCOUNT -->
+      <div class="card hidden" id="settings">
+        <h2 class="card-title" data-i18n="settings_title">Account &amp; data</h2>
+        <div id="settInfo" class="empty" data-i18n="settings_login_empty">Sign in to manage your account.</div>
+        <div class="hidden" id="settBody">
+          <h3 style="font-size:15px;margin-top:14px" data-i18n="sett_account">Account</h3>
+          <div class="row">
+            <div style="flex:1;min-width:180px"><label for="acc_name" data-i18n="lbl_account_name">Display name</label><input id="acc_name" maxlength="80" autocomplete="name" /></div>
+          </div>
+          <button class="ghost" data-onclick="saveProfile" id="nameBtn" data-i18n="btn_save_name">Save</button>
+          <h3 style="font-size:15px;margin-top:14px" data-i18n="sett_security">Security</h3>
+          <div class="row">
+            <div style="flex:1;min-width:180px"><label for="pw_current" data-i18n="lbl_pw_current">Current password</label><input id="pw_current" type="password" /></div>
+            <div style="flex:1;min-width:180px"><label for="pw_new" data-i18n="lbl_pw_new">New password</label><input id="pw_new" type="password" /></div>
+          </div>
+          <button class="ghost" data-onclick="changePassword" id="pwBtn" data-i18n="pw_change_btn">Change password</button>
+          <h3 style="font-size:15px;margin-top:18px" data-i18n="sett_data">Your data</h3>
+          <button class="ghost" data-onclick="exportData" id="exportBtn" data-i18n="data_export_btn">Download my data (JSON)</button>
+          <button class="danger" data-onclick="deleteAccount" id="deleteBtn" data-i18n="data_delete_btn">Delete my account and data</button>
+          <div class="hint" data-i18n="data_delete_hint">Deletion removes your account, projects and their generated boards. Type DELETE to confirm.</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title" data-i18n="tg_title">🤖 Link Telegram Bot</h2>
+        <div class="hint" data-i18n="tg_hint">Send your goal to the FluxSwarm Telegram bot and get live swarm results. Link your account so launches run under your credits and plan.</div>
+        <div id="tgBody" class="empty" data-i18n="tg_login_hint">Sign in to link Telegram to your account.</div>
       </div>
     </div>
-    <div class="hint" id="resHint" data-i18n="res_hint">Generated files from this board's workspace.</div>
-    <pre id="wsContent" class="empty"></pre>
-  </div>
+  </section>
 
-  <!-- HISTORY / PROJECTS -->
-  <div class="card hidden" id="projects">
-    <h2 class="card-title" data-i18n="projects_title">History &amp; results</h2>
-    <div id="projectsList" class="empty" data-i18n="projects_login_empty">Sign in to see your projects.</div>
-  </div>
-
-  <!-- PRICING -->
-  <div class="card" id="pricing">
-    <h2 class="section-title" data-i18n="pricing_title">Plans &amp; pricing</h2>
+  <!-- PRICING (design-preview B) -->
+  <section class="card" id="pricing" style="margin-top:var(--s8)">
+    <div class="pricing-head">
+      <h1 class="section-title" data-i18n="pricing_title">Simple pricing. Real work.</h1>
+      <p data-i18n="pricing_sub">Every plan is a prepaid credit pack with a clear credit allowance — one credit per launch. Cancel or change any time, and packs never expire.</p>
+    </div>
     <div class="grid" id="plansGrid"></div>
-    <div class="hint" data-i18n="pricing_hint">Prepaid credit packs — no monthly fee. All plans include the full squad (8 agents); higher tiers add credits and parallel execution. Prices in USD; GBP is applied by Paddle at checkout for UK customers.</div>
-    <div style="margin-top:12px">
+    <p class="note"><b>✓ No credit card required</b> to try — the Demo plan starts with 5 free credits. Launch failures refund the credit automatically; payments are handled by Paddle worldwide (prices in USD, GBP applied at checkout for UK customers).</p>
+    <div class="faq-sec">
+      <h2 data-i18n="faq_title">Frequently asked questions</h2>
       <details class="faq" open><summary>How are credits used?</summary><p>One launch = one project board = one credit. You buy nothing monthly — packs never expire.</p></details>
       <details class="faq"><summary>Can I try before paying?</summary><p>Yes — the Demo plan includes 5 free credits, no card required. You can also bring your own provider key (BYOK) at any tier.</p></details>
       <details class="faq"><summary>Which AI providers are supported?</summary><p>Claude, GPT, Gemini and Kimi via BYOK, plus a free OpenRouter option (GLM-5.2). Output strength follows the provider you use.</p></details>
       <details class="faq"><summary>What does the 1-credit launch fee cover?</summary><p>The squad execution itself. With BYOK you pay your provider's token rate directly; FluxSwarm still only charges the single credit.</p></details>
       <details class="faq"><summary>Refunds?</summary><p>Paddle handles payments; launches that fail before any work starts are auto-refunded in credits, and our refund policy covers unused credit packs.</p></details>
     </div>
-  </div>
-
-  <!-- REFERRALS -->
-  <div class="card hidden" id="referrals">
-    <h2 class="card-title" data-i18n="ref_title">Referral Program</h2>
-    <div id="refContent"><div class="empty" data-i18n="ref_login_empty">Sign in to see your referral link.</div></div>
-  </div>
-
-  <!-- BYOK -->
-  <div class="card hidden" id="byok">
-    <h2 class="card-title" data-i18n="byok_title">🔑 Your keys (BYOK)</h2>
-    <div class="hint" data-i18n="byok_hint">Add a Claude/GPT/Gemini/Kimi key for stronger output, or a free OpenRouter key (GLM-5.2) to trial it at zero cost — it pays your provider's token rate; FluxSwarm still only charges the 1-credit launch fee. A provider is only used after you accept its terms below. Keys are encrypted at rest and never shown back.</div>
-    <div class="row" style="margin-top:10px">
-      <div style="flex:1;min-width:160px"><label for="byok_provider" data-i18n="lbl_provider">Provider</label>
-        <select id="byok_provider" style="width:100%;background:var(--panel2);border:1px solid var(--border);color:var(--fg);border-radius:10px;padding:10px">
-          <option value="openrouter">OpenRouter (free)</option>
-          <option value="anthropic">Anthropic (Claude)</option>
-          <option value="openai">OpenAI</option>
-          <option value="gemini">Gemini</option>
-          <option value="kimi">Kimi</option>
-        </select>
-      </div>
-      <div style="flex:3;min-width:260px"><label for="byok_token" data-i18n="lbl_key">API key</label>
-        <input id="byok_token" placeholder="sk-..." />
-      </div>
-    </div>
-    <div class="hint" style="margin-top:8px">
-      <label><input type="checkbox" id="byok_agree" checked /> <span data-i18n="byok_agree">I accept this provider's terms (required before launch).</span></label>
-    </div>
-    <button class="primary" data-onclick="saveKey">Save key</button>
-    <div id="byokList" style="margin-top:10px"></div>
-    <div data-i18n="byok_agg_hint" style="font-size:12px;color:var(--muted)">Saved keys are locked to the current provider terms version; accepting a new version refreshes it.</div>
-  </div>
-
-  <!-- CUSTOM AGENTS (P4) -->
-  <div class="card hidden" id="agents">
-    <h2 class="card-title" data-i18n="agents_title">🛠 Custom agents</h2>
-    <div class="hint" data-i18n="agents_hint">Define your own squad members — name, mission and skills — then attach them to any launch. Each custom agent runs as an extra lane and leaves its deliverable in your project workspace.</div>
-    <div class="row" style="margin-top:10px">
-      <div style="flex:1"><label for="ag_name" data-i18n="ag_name">Agent name</label><input id="ag_name" maxlength="80" placeholder="e.g. Security Auditor" /></div>
-      <div style="flex:1"><label for="ag_obj" data-i18n="ag_obj">Mission (what it must produce)</label><input id="ag_obj" maxlength="500" placeholder="Audit the workspace for OWASP Top 10 issues and produce a fixes report" /></div>
-    </div>
-    <label for="ag_skills" data-i18n="ag_skills">Skills (optional, comma separated)</label><input id="ag_skills" maxlength="300" placeholder="security, python, fastapi" />
-    <button class="primary" data-onclick="createAgent" data-i18n="ag_create">➕ Create agent</button>
-    <h3 style="font-size:15px;margin-top:16px" data-i18n="agents_list">My agents</h3>
-    <div class="grid" id="agentGrid"></div>
-  </div>
-
-  <!-- SQUAD MARKETPLACE -->
-  <div class="card hidden" id="market">
-    <h2 class="card-title" data-i18n="market_title">🛒 Squad Marketplace</h2>
-    <div class="hint" data-i18n="market_hint">Publish your agent lineup as a template others buy with credits, or buy a ready-made squad from the community.</div>
-    <div class="row" style="margin-top:10px">
-      <div style="flex:1"><label for="tpl_name" data-i18n="tpl_name">Template name</label><input id="tpl_name" placeholder="e.g. Secure web squad" /></div>
-      <div style="flex:1"><label for="tpl_price" data-i18n="tpl_price">Price (credits)</label><input id="tpl_price" type="number" value="10" /></div>
-    </div>
-    <label for="tpl_desc" data-i18n="tpl_desc">Description</label><textarea id="tpl_desc" placeholder="What does this squad build?"></textarea>
-    <label for="tpl_agents" data-i18n="tpl_agents">Agents (display names, comma separated)</label><input id="tpl_agents" placeholder="Planner, Architect, DevOps, TDD, Reviewer, Designer, Builder, Auditor" />
-    <button class="primary" data-onclick="publishTpl">📦 Publish template</button>
-    <h3 style="font-size:15px;margin-top:16px" data-i18n="market_list">Available templates</h3>
-    <div class="grid" id="tplGrid"></div>
-  </div>
-
-  <!-- SETTINGS / ACCOUNT -->
-  <div class="card hidden" id="settings">
-    <h2 class="card-title" data-i18n="settings_title">Account &amp; data</h2>
-    <div id="settInfo" class="empty" data-i18n="settings_login_empty">Sign in to manage your account.</div>
-    <div class="hidden" id="settBody">
-      <h3 style="font-size:15px;margin-top:14px" data-i18n="sett_account">Account</h3>
-      <div class="row">
-        <div style="flex:1;min-width:180px"><label for="acc_name" data-i18n="lbl_account_name">Display name</label><input id="acc_name" maxlength="80" autocomplete="name" /></div>
-      </div>
-      <button class="ghost" data-onclick="saveProfile" id="nameBtn" data-i18n="btn_save_name">Save</button>
-      <h3 style="font-size:15px;margin-top:14px" data-i18n="sett_security">Security</h3>
-      <div class="row">
-        <div style="flex:1;min-width:180px"><label for="pw_current" data-i18n="lbl_pw_current">Current password</label><input id="pw_current" type="password" /></div>
-        <div style="flex:1;min-width:180px"><label for="pw_new" data-i18n="lbl_pw_new">New password</label><input id="pw_new" type="password" /></div>
-      </div>
-      <button class="ghost" data-onclick="changePassword" id="pwBtn" data-i18n="pw_change_btn">Change password</button>
-      <h3 style="font-size:15px;margin-top:18px" data-i18n="sett_data">Your data</h3>
-      <button class="ghost" data-onclick="exportData" id="exportBtn" data-i18n="data_export_btn">Download my data (JSON)</button>
-      <button class="danger" data-onclick="deleteAccount" id="deleteBtn" data-i18n="data_delete_btn">Delete my account and data</button>
-      <div class="hint" data-i18n="data_delete_hint">Deletion removes your account, projects and their generated boards. Type DELETE to confirm.</div>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2 class="card-title" data-i18n="tg_title">🤖 Link Telegram Bot</h2>
-    <div class="hint" data-i18n="tg_hint">Send your goal to the FluxSwarm Telegram bot and get live swarm results. Link your account so launches run under your credits and plan.</div>
-    <div id="tgBody" class="empty" data-i18n="tg_login_hint">Sign in to link Telegram to your account.</div>
-  </div>
+  </section>
 
   <!-- CLOSING CTA (design-preview D) -->
   <section class="cta-band" aria-label="Start building">
@@ -761,20 +867,22 @@ function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,m=>({"&":"&amp;",
 function t(k){const v=I18N[LANG][k];return v!==undefined?v:k;}
 function fmt(k,...args){let s=I18N[LANG][k];if(s===undefined)s=k;args.forEach(a=>{s=s.replace(/\{(\w+)\}/,a);});return s;}
 function errt(m){return m||"";}
-function gotoSection(id){["pricing","referrals","byok","agents","market","projects","settings","results"].forEach(s=>{const el=document.getElementById(s);if(el)el.classList.toggle("hidden",s!==id);});const el=document.getElementById(id);if(el)window.scrollTo({top:el.offsetTop-60,behavior:"smooth"});}
+function gotoSection(id){["referrals","byok","agents","market","settings"].forEach(s=>{const el=document.getElementById(s);if(el)el.classList.toggle("hidden",s!==id);});document.querySelectorAll(".side-item").forEach(b=>{b.classList.toggle("on",b.getAttribute("data-arg")===id);});if(id==="projects")id="panProjects";if(id==="results")switchWsTab("files");const ht={panProjects:["Projects","Live task board"],boardCard:["Swarm","Live task board"],results:["Outputs","Generated workspace"],pricing:["Billing","Prepaid credits"]}[id];if(ht){const dt=document.getElementById("dashTitle");if(dt)dt.textContent=ht[0];const ds=document.getElementById("dashSub");if(ds)ds.textContent=ht[1];}let target=document.getElementById(id);if(!target)target=document.getElementById("panProjects");window.scrollTo({top:Math.max(0,target.getBoundingClientRect().top+window.scrollY-80),behavior:"smooth"});}
 function openAuth(){document.getElementById("authModal").classList.add("open");document.getElementById("l_email").focus();}
 function switchTab(t){document.getElementById("tabLogin").classList.toggle("active",t==="login");document.getElementById("tabReg").classList.toggle("active",t==="reg");document.getElementById("loginForm").classList.toggle("hidden",t!=="login");document.getElementById("regForm").classList.toggle("hidden",t!=="reg");}
 function dismissConsent(){localStorage.setItem("fs-consent","1");document.getElementById("consentBar").classList.remove("show");}
 (function initConsent(){if(!localStorage.getItem("fs-consent")){document.getElementById("consentBar").classList.add("show");}}());
-(function initTheme(){const t=localStorage.getItem("fs-theme");if(t==="light"){document.documentElement.setAttribute("data-theme","light");const b=document.getElementById("themeBtn");if(b)b.textContent="🌙 Dark";}}());
-function toggleTheme(){const cur=document.documentElement.getAttribute("data-theme")==="light";if(cur){document.documentElement.removeAttribute("data-theme");localStorage.setItem("fs-theme","");document.getElementById("themeBtn").textContent="☀️ Light";}else{document.documentElement.setAttribute("data-theme","light");localStorage.setItem("fs-theme","light");document.getElementById("themeBtn").textContent="🌙 Dark";}}
+(function initTheme(){const t=localStorage.getItem("fs-theme");if(t==="light")applyTheme(true);}());
+function applyTheme(light){document.documentElement.toggleAttribute("data-theme",!!light);document.querySelectorAll(".theme-btn").forEach(b=>{b.textContent=light?"🌙 Dark":"☀️ Light";});}
+function toggleTheme(){const cur=document.documentElement.getAttribute("data-theme")==="light";applyTheme(!cur);localStorage.setItem("fs-theme",cur?"":"light");}
+  function switchWsTab(w){const log=w==="log";document.getElementById("wsWrap").style.display=log?"none":"";document.getElementById("logWrap").style.display=log?"":"none";document.getElementById("tabFiles").classList.toggle("on",!log);document.getElementById("tabLog").classList.toggle("on",log);}
   function gotoLaunch(a){let id="launch";if(a&&typeof a==="string")id=a;else if(a&&a.currentTarget)id=a.currentTarget.getAttribute("data-arg")||"launch";const el=document.getElementById(id)||document.getElementById("launch");if(!el)return;el.scrollIntoView({behavior:"smooth",block:"center"});const inp=el.querySelector("#pname");if(inp)setTimeout(()=>inp.focus(),350);}
 
 async function loadSquad(){const g=document.getElementById("squadGrid");g.innerHTML='<div class="empty">Loading squad…</div>';try{const r=await fetch(API+"/api/squad");const d=await r.json();g.innerHTML="";[...d.workers,d.verifier,d.synthesizer].forEach(a=>{const div=document.createElement("div");div.className="agent";div.innerHTML=`<div class="role">${esc(a.role)}</div><div class="name">${esc(a.display||a.profile)}</div><div class="skills">${t("skills_lbl")} ${esc(a.skills.join(", "))}</div>`;g.appendChild(div);});}catch(e){g.innerHTML='<div class="empty">Could not load squad</div>';}}
 async function loadPlans(){const g=document.getElementById("plansGrid");g.innerHTML='<div class="empty">Loading plans…</div>';try{const r=await fetch(API+"/api/plans");const d=await r.json();g.innerHTML="";d.forEach(p=>{const div=document.createElement("div");div.className="pc"+(p.id==="pro"?" hot":"");div.innerHTML=`${p.id==="pro"?'<div class="tag">MOST POPULAR</div>':""}<div class="name">${esc(p.name)}</div><div class="for">${t("desc_"+p.id)}</div><div class="price"><span class="sym">$</span><span class="a">${p.price}</span><span class="per">/ ${t("per_pack")}</span></div><div class="per-line">${fmt("credits_line",p.credits,p.parallel)}</div><ul class="list"><li>${t("feat_full")}</li><li>${t("feat_credit")}</li><li>${t("feat_live")}</li><li>${t("feat_tg")}</li></ul><button class="btn pbtn ${p.price==0?"ghost":"primary"}" data-onclick="subscribe" data-arg="${p.id}">${p.price==0?t("use_free"):t("subscribe_btn")}</button>`;g.appendChild(div);});}catch(e){g.innerHTML='<div class="empty">Could not load plans</div>';}}
 
-function setUser(u){currentUser=u;const pill=document.getElementById("userPill");pill.classList.remove("hidden");const pct=(u.credits>=9999)?100:Math.min(100,Math.max(4,u.credits));pill.innerHTML=`<span class="userbox"><span class="ub-line"><b>${esc(u.name)}</b><span class="ub-plan">${esc(u.plan)}</span></span><span class="ub-line"><span>${u.credits} ${t("creds")}</span><span class="credbar"><i style="width:${pct}%"></i></span></span></span>`;document.getElementById("navLogin").textContent=t("logout");document.getElementById("heroHint").textContent=t("loggedin_hint");loadReferrals();loadByok();loadTelegram();loadProjects();loadSettings();}
-function clearUser(){const tk=token;currentUser=null;token=null;try{localStorage.removeItem("token");}catch(e){}document.getElementById("userPill").classList.add("hidden");document.getElementById("navLogin").textContent=t("nav_login");document.getElementById("heroHint").textContent=t("hero_hint");document.getElementById("projectsList").innerHTML='<div class="empty">'+t("projects_login_empty")+'</div>';document.getElementById("settInfo").classList.remove("hidden");document.getElementById("settInfo").textContent=t("settings_login_empty");document.getElementById("settBody").classList.add("hidden");loadTelegram();if(tk){try{fetch(API+"/api/auth/logout",{method:"POST",headers:{Authorization:"Bearer "+tk}}).catch(()=>{});}catch(e){}}}
+function setUser(u){currentUser=u;const pill=document.getElementById("userPill");pill.classList.remove("hidden");const pct=(u.credits>=9999)?100:Math.min(100,Math.max(4,u.credits));pill.innerHTML=`<span class="userbox"><span class="ub-line"><b>${esc(u.name)}</b><span class="ub-plan">${esc(u.plan)}</span></span><span class="ub-line"><span>${u.credits} ${t("creds")}</span><span class="credbar"><i style="width:${pct}%"></i></span></span></span>`;document.getElementById("navLogin").textContent=t("logout");document.getElementById("heroHint").textContent=t("loggedin_hint");const cp=document.getElementById("creditsPill");if(cp){cp.classList.remove("hidden");document.getElementById("creditsNum").textContent=u.credits;document.getElementById("creditsBar").style.width=pct+"%";const sb=document.getElementById("sbUser");if(sb)sb.textContent=(u.plan||"Demo")+" · "+u.credits+" "+t("creds");}loadReferrals();loadByok();loadTelegram();loadProjects();loadSettings();}
+function clearUser(){const tk=token;currentUser=null;token=null;try{localStorage.removeItem("token");}catch(e){}document.getElementById("userPill").classList.add("hidden");document.getElementById("navLogin").textContent=t("nav_login");document.getElementById("heroHint").textContent=t("hero_hint");const cp=document.getElementById("creditsPill");if(cp)cp.classList.add("hidden");const sb=document.getElementById("sbUser");if(sb)sb.textContent=t("projects_login_empty");document.getElementById("projectsList").innerHTML='<div class="empty">'+t("projects_login_empty")+'</div>';document.getElementById("settInfo").classList.remove("hidden");document.getElementById("settInfo").textContent=t("settings_login_empty");document.getElementById("settBody").classList.add("hidden");loadTelegram();if(tk){try{fetch(API+"/api/auth/logout",{method:"POST",headers:{Authorization:"Bearer "+tk}}).catch(()=>{});}catch(e){}}}
 
 function storedToken(){try{return localStorage.getItem("token");}catch(e){return null;}}
 /* Restore a persisted session on refresh / new tab. The HttpOnly fs_token
@@ -1062,7 +1170,9 @@ function connectWS(slug){if(ws)ws.close();ws=new WebSocket((location.protocol===
 async function pollTasks(slug){const r=await fetch(API+`/api/projects/${encodeURIComponent(slug)}/tasks`,{headers:token?{Authorization:"Bearer "+token}:{}});if(!r.ok){toast(t("login_first"));return;}const d=await r.json();renderTasks(d);}
 function fmtClock(epoch){if(!epoch)return "";const d=new Date(epoch*1000);const p=n=>String(n).padStart(2,"0");return p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds());}
 function toggleActivity(id){const b=document.getElementById("actBody_"+id);if(!b)return;const open=b.classList.toggle("open");document.getElementById("actBtn_"+id).textContent=open?t("act_hide"):t("act_btn");}
-function renderTasks(tasks){const el=document.getElementById("taskList");if(!tasks||!tasks.length){el.innerHTML='<div class="empty">'+t("no_tasks")+'</div>';return;}el.innerHTML="";const cls={done:"s-done",running:"s-running",queued:"s-queued",blocked:"s-blocked",failed:"s-failed",cancelled:"s-cancelled",retrying:"s-running",unknown:"s-unknown"};for(const tk of tasks){const div=document.createElement("div");div.className="task";if(tk.state)div.dataset.state=tk.state;const name=tk.role_name||tk.assignee_display||tk.assignee||"Agent";const sub=tk.current_action||tk.state||"—";const log=(tk.activity_log||[]);let actHtml='<div class="act-empty">'+t("act_empty")+'</div>';if(log.length){actHtml=log.map(e=>`<div class="act"><span class="act-state">${esc(e.label)}</span><span class="act-time">${fmtClock(e.at)}</span></div>`).join("");}let resultHtml="";if(tk.state==="done"&&tk.result_preview){resultHtml=`<div class="act-result"><strong>${t("act_result")}</strong><div>${esc(tk.result_preview)}</div></div>`;}div.innerHTML=`<span class="dot ${cls[tk.state]||'s-unknown'}"></span><div style="flex:1;min-width:0"><div class="t-title">${esc(tk.title)}${tk.state?`<span class="st-label">${esc(t("st_"+tk.state))}</span>`:""}</div><div class="t-assign"><b>${esc(name)}</b> · ${esc(sub)}</div>${tk.role_description?'<div class="t-desc">'+esc(tk.role_description)+'</div>':''}<div class="t-activity" id="actBody_${esc(tk.id)}">${actHtml}${resultHtml}</div></div>${(log.length||tk.result_preview)?'<button class="ghost act-btn" id="actBtn_'+esc(tk.id)+'" data-onclick="toggleActivity" data-arg="'+esc(tk.id)+'" >'+t("act_btn")+'</button>':''}`;el.appendChild(div);}document.getElementById("liveCounter").textContent=fmt("tasks_n",tasks.length);}
+function renderTasks(tasks){const el=document.getElementById("taskList");if(!tasks||!tasks.length){el.innerHTML='<div class="empty">'+t("no_tasks")+'</div>';return;}el.innerHTML="";const cls={done:"s-done",running:"s-running",queued:"s-queued",blocked:"s-blocked",failed:"s-failed",cancelled:"s-cancelled",retrying:"s-running",unknown:"s-unknown"};for(const tk of tasks){const div=document.createElement("div");div.className="task";if(tk.state)div.dataset.state=tk.state;const name=tk.role_name||tk.assignee_display||tk.assignee||"Agent";const sub=tk.current_action||tk.state||"—";const log=(tk.activity_log||[]);let actHtml='<div class="act-empty">'+t("act_empty")+'</div>';if(log.length){actHtml=log.map(e=>`<div class="act"><span class="act-state">${esc(e.label)}</span><span class="act-time">${fmtClock(e.at)}</span></div>`).join("");}let resultHtml="";if(tk.state==="done"&&tk.result_preview){resultHtml=`<div class="act-result"><strong>${t("act_result")}</strong><div>${esc(tk.result_preview)}</div></div>`;}div.innerHTML=`<span class="dot ${cls[tk.state]||'s-unknown'}"></span><div style="flex:1;min-width:0"><div class="t-title">${esc(tk.title)}${tk.state?`<span class="st-label">${esc(t("st_"+tk.state))}</span>`:""}</div><div class="t-assign"><b>${esc(name)}</b> · ${esc(sub)}</div>${tk.role_description?'<div class="t-desc">'+esc(tk.role_description)+'</div>':''}<div class="t-activity" id="actBody_${esc(tk.id)}">${actHtml}${resultHtml}</div></div>${(log.length||tk.result_preview)?'<button class="ghost act-btn" id="actBtn_'+esc(tk.id)+'" data-onclick="toggleActivity" data-arg="'+esc(tk.id)+'" >'+t("act_btn")+'</button>':''}`;el.appendChild(div);}document.getElementById("liveCounter").textContent=fmt("tasks_n",tasks.length);renderLanes(tasks);}
+function laneOf(tk){const rn=(tk.role_name||tk.assignee_display||tk.assignee||"").toLowerCase();if(["done","failed","cancelled"].includes(tk.state))return"done";if(/planner|prd|plan/.test(rn))return"plan";if(/review|audit|verif|secur|support/.test(rn))return"review";return"build";}
+function renderLanes(tasks){document.querySelectorAll(".lane").forEach((l,i)=>{const key=["plan","build","review","done"][i];const items=(tasks&&tasks.length)?tasks.filter(tk=>laneOf(tk)===key):[];const badge=l.querySelector("h3 i");if(badge)badge.textContent=items.length;const body=l.querySelector(".lane-body");if(!items.length){body.innerHTML='<div class="empty">—</div>';return;}body.innerHTML=items.map(tk=>{const nm=tk.role_name||tk.assignee_display||tk.assignee||"Agent";const st=tk.state||"queued";const last=(tk.activity_log&&tk.activity_log.length)?tk.activity_log[tk.activity_log.length-1].label:tk.current_action||"";return `<div class="agent ${st}"><span class="pulse"></span><b>${esc(nm)}</b><span>${esc(last||tk.title||"—")}</span><i>${esc(t("st_"+st)||st)}</i></div>`;}).join("");});const last=(tasks&&tasks.length)?tasks.reduce((m,tk)=>!m||((m.updated_at||"")<(tk.updated_at||""))?tk:m,null):null;const ev=document.getElementById("outcomeTxt");if(ev)ev.textContent=last?(last.role_name||last.assignee||"agent")+" · "+(last.current_action||t("st_"+last.state)||last.state||"—"):t("no_activity");const ev2=document.getElementById("lastEventTxt");if(ev2)ev2.textContent="● "+(last?(last.role_name||last.assignee||"agent")+" · "+(last.current_action||t("st_"+last.state)||"…"):t("no_activity"));}
 
 async function loadSettings(){
   const info=document.getElementById("settInfo");
@@ -1426,24 +1536,10 @@ function supportClose(){
   if(rtl==="rtl"){document.getElementById("supportTitle").textContent="دعم FluxSwarm";}
 })();
 </script>
-<footer class="site-footer" role="contentinfo">
-  <div class="site-footer-brand">
-    <img class="nav-logo" src="/static/brand/logo.jpg" alt="" width="24" height="24" />
-    <span>FluxSwarm</span>
-    <span>·</span>
-    <span>AI development squad</span>
-  </div>
-  <nav class="site-footer-links" aria-label="Footer">
-  <a href="/how-it-works">How it works</a> ·
-  <a href="/faq">FAQ</a> ·
-  <a href="/pricing">Pricing</a> ·
-  <a href="mailto:support@fluxswarm.ai">Support</a> ·
-  <a href="/privacy-en">Privacy</a> ·
-  <a href="/terms-en">Terms</a> ·
-  <a href="/refund-en">Refund policy</a> ·
-  <a href="/cookies-en">Cookies</a> ·
-  <a href="/acceptable-use-en">Acceptable use</a>
-  </nav>
+<footer class="foot" role="contentinfo">
+  <div class="fbrand"><div class="logo"><span class="dot" aria-hidden="true">⚡</span><span>FluxSwarm</span></div><p>AI development squad — type a goal, watch a swarm plan, build, test and ship it.</p><div class="flinks"><a href="mailto:support@fluxswarm.ai">Support</a><a href="/privacy-en">Privacy</a><a href="/terms-en">Terms</a></div></div>
+  <div class="fcol"><h4>Product</h4><a href="/how-it-works">How it works</a><button class="fbtn" data-onclick="gotoSection" data-arg="pricing">Pricing</button><button class="fbtn" data-onclick="gotoLaunch" data-arg="launch">Start building</button><a href="/faq">FAQ</a></div>
+  <div class="fcol"><h4>Resources</h4><a href="/refund-en">Refund policy</a><a href="/cookies-en">Cookies</a><a href="/acceptable-use-en">Acceptable use</a><a href="/pricing">Plans &amp; credits</a></div>
 </footer>
 </body>
 </html>
