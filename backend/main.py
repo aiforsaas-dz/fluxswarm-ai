@@ -4294,9 +4294,16 @@ def dev_complete_mock_payment(request: Request, user_id: int, plan: str, aud: st
 # ---------- compliance: public legal pages ----------
 _LEGAL_BASE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
  <meta name="viewport" content="width=device-width, initial-scale=1"><title>{title}</title>{head}
- <style>body{{font-family:system-ui,sans-serif;max-width:760px;margin:40px auto;padding:0 16px;
- line-height:1.7;color:#222}}h1{{font-size:1.6rem}}a{{color:#0b59c5}}</style></head>
- <body><p style="color:#777;font-size:.85rem">Last updated: 7 September 2026</p>{body}</body></html>"""
+ <style>
+ @font-face{{font-family:'Inter';font-weight:400;font-display:swap;src:url('/static/fonts/Inter-400.woff2') format('woff2')}}
+ @font-face{{font-family:'Inter';font-weight:600;font-display:swap;src:url('/static/fonts/Inter-600.woff2') format('woff2')}}
+ @font-face{{font-family:'Inter';font-weight:700;font-display:swap;src:url('/static/fonts/Inter-700.woff2') format('woff2')}}
+ body{{font-family:'Inter',ui-sans-serif,system-ui,"Segoe UI",Tahoma,sans-serif;background:#F8FAFC;color:#1E293B;max-width:760px;margin:40px auto;padding:0 24px;line-height:1.7}}
+ h1{{font-size:1.6rem;font-weight:800;letter-spacing:-.5px;margin:0 0 8px}}
+ a{{color:#0891B2}}
+ .updated{{color:#64748B;font-size:.85rem}}
+ </style></head>
+ <body><p class="updated">Last updated: 7 September 2026</p>{body}</body></html>"""
 
 _LEGAL_BASE_EN = _LEGAL_BASE
 
@@ -4507,39 +4514,48 @@ _MARKET_CSS = """@font-face{font-family:'Inter';font-weight:400;font-display:swa
 @font-face{font-family:'Inter';font-weight:700;font-display:swap;src:url('/static/fonts/Inter-700.woff2') format('woff2')}
 @font-face{font-family:'Inter';font-weight:800;font-display:swap;src:url('/static/fonts/Inter-800.woff2') format('woff2')}
 @font-face{font-family:'Space Grotesk';font-weight:700;font-display:swap;src:url('/static/fonts/SpaceGrotesk-700.woff2') format('woff2')}
-body{font-family:'Inter',ui-sans-serif,system-ui,"Segoe UI",Tahoma;margin:0;background:#0b0f1a;color:#eef1fb;line-height:1.6}
+:root{--bg:#0b0f1a;--surface:#141a2c;--surface2:#0f1424;--border:#25304a;--text:#eef1fb;--muted:#8b96b3;--accent:#22d3ee;--accent2:#7c3aed;--grad:linear-gradient(90deg,#22d3ee,#7c3aed)}
+html[data-theme="light"]{--bg:#F8FAFC;--surface:#FFFFFF;--surface2:#EEF2F7;--border:#E2E8F0;--text:#1E293B;--muted:#64748B;--accent:#0891B2;--accent2:#7C3AED;--grad:linear-gradient(90deg,#06B6D4,#8B5CF6)}
+body{font-family:'Inter',ui-sans-serif,system-ui,"Segoe UI",Tahoma;margin:0;background:var(--bg);color:var(--text);line-height:1.6;transition:background .2s,color .2s}
 .wrap{max-width:980px;margin:0 auto;padding:28px 20px 60px}
-.top{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:14px;padding:14px 20px;border-bottom:1px solid #25304a;background:rgba(15,20,36,.82);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
-.top .logo{font-weight:800;background:linear-gradient(90deg,#22d3ee,#7c3aed);-webkit-background-clip:text;background-clip:text;color:transparent;font-size:19px}
-.top nav{margin-left:auto;display:flex;gap:16px} .top nav a{color:#8b96b3;text-decoration:none;font-size:14px} .top nav a:hover{color:#22d3ee}
-h1{font-family:'Space Grotesk','Inter',sans-serif;font-size:32px;margin:22px 0 8px;letter-spacing:-.5px} h2{font-size:20px;margin:26px 0 8px;color:#cdd4e2}
-p{color:#8b96b3} a{color:#22d3ee} li{color:#8b96b3;margin:5px 0}
+.top{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:14px;padding:14px 20px;border-bottom:1px solid var(--border);background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.top .logo{font-weight:800;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;font-size:19px}
+.top nav{margin-left:auto;display:flex;gap:16px} .top nav a{color:var(--muted);text-decoration:none;font-size:14px} .top nav a:hover{color:var(--accent)}
+.theme-toggle{border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer;margin-left:12px}
+h1{font-family:'Space Grotesk','Inter',sans-serif;font-size:32px;margin:22px 0 8px;letter-spacing:-.5px} h2{font-size:20px;margin:26px 0 8px;color:var(--muted)}
+p{color:var(--muted)} a{color:var(--accent)} li{color:var(--muted);margin:5px 0}
 .plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin:22px 0}
-.pl{position:relative;background:linear-gradient(180deg,#141a2c,#0f1424);border:1px solid #25304a;border-radius:16px;padding:20px}
-.pl.hot{border-color:#22d3ee;box-shadow:0 0 0 1px #22d3ee,0 16px 40px rgba(34,211,238,.10)}
+.pl{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;transition:border-color .15s,transform .12s}
+.pl:hover{transform:translateY(-2px)}
+.pl.hot{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 16px 40px color-mix(in srgb,var(--accent) 10%,transparent)}
 .pl .n{font-size:17px;font-weight:800} .pl .p{font-size:28px;font-weight:800;margin:8px 0;font-family:'Space Grotesk','Inter',sans-serif}
-.pl .p small{color:#8b96b3;font-weight:400;font-size:12px} .pl ul{list-style:none;padding:0;margin:8px 0;font-size:13px}
-.cmp{width:100%;border-collapse:collapse;font-size:14px} .cmp th,.cmp td{border:1px solid #25304a;padding:10px 12px;text-align:left}
-.cmp th{color:#cdd4e2} .cmp td{color:#8b96b3}
-.foot{border-top:1px solid #25304a;padding:16px 0;font-size:13px;color:#7a8699}
-.foot a{color:#22d3ee}
-.pill{display:inline-block;font-size:11px;letter-spacing:1px;font-weight:800;padding:4px 12px;border-radius:999px;background:linear-gradient(92deg,#22d3ee,#7c3aed);color:#0b0f1a;margin-bottom:12px}
-details.faq{border:1px solid #25304a;border-radius:12px;background:#0f1424;padding:14px 16px;margin-top:10px}
-details.faq summary{cursor:pointer;font-weight:700;font-size:14px;list-style:none;color:#eef1fb}
+.pl .p small{color:var(--muted);font-weight:400;font-size:12px} .pl ul{list-style:none;padding:0;margin:8px 0;font-size:13px}
+.cmp{width:100%;border-collapse:collapse;font-size:14px} .cmp th,.cmp td{border:1px solid var(--border);padding:10px 12px;text-align:left}
+.cmp th{color:var(--text)} .cmp td{color:var(--muted)}
+.foot{border-top:1px solid var(--border);padding:16px 0;font-size:13px;color:var(--muted)}
+.foot a{color:var(--accent)}
+.pill{display:inline-block;font-size:11px;letter-spacing:1px;font-weight:800;padding:4px 12px;border-radius:999px;background:var(--grad);color:#0b0f1a;margin-bottom:12px}
+details.faq{border:1px solid var(--border);border-radius:12px;background:var(--surface2);padding:14px 16px;margin-top:10px}
+details.faq summary{cursor:pointer;font-weight:700;font-size:14px;list-style:none;color:var(--text)}
 details.faq summary::-webkit-details-marker{display:none}
-details.faq summary::after{content:"+";float:right;color:#22d3ee;font-weight:800}
+details.faq summary::after{content:"+";float:right;color:var(--accent);font-weight:800}
 details.faq[open] summary::after{content:"–"}
-details.faq p{margin:8px 0 0;color:#8b96b3}"""
+details.faq p{margin:8px 0 0;color:var(--muted)}
+@media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+@media(max-width:720px){.plans{grid-template-columns:1fr}.top{flex-wrap:wrap}}"""
 
 _MARKET_BASE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="{desc}"><title>{title}</title>{head}
 <style>{css}</style></head><body>
+<script>(function(){{var t=localStorage.getItem('fsTheme');if(t==='light')document.documentElement.setAttribute('data-theme','light');}})();</script>
 <div class="top"><span class="logo">FluxSwarm</span><nav>
-<a href="/">Go to app</a><a href="/pricing">Pricing</a><a href="/how-it-works">How it works</a><a href="/faq">FAQ</a></nav></div>
+<a href="/">Go to app</a><a href="/pricing">Pricing</a><a href="/how-it-works">How it works</a><a href="/faq">FAQ</a>
+<button class="theme-toggle" id="mThemeBtn" aria-label="Toggle theme">☀️</button></nav></div>
 <div class="wrap">{body}<div class="foot">FluxSwarm · <a href="/privacy">Privacy</a> ·
 <a href="/terms">Terms</a> · <a href="/refund">Refund</a> ·
 <a href="/cookies">Cookies</a> · <a href="/acceptable-use">Acceptable use</a></div></div>
+<script>(function(){{var h=document.documentElement;var b=document.getElementById('mThemeBtn');if(!b)return;function upd(){{b.textContent=(h.getAttribute('data-theme')==='light')?'🌙':'☀️';}}upd();b.addEventListener('click',function(){{if(h.getAttribute('data-theme')==='light'){{h.removeAttribute('data-theme');localStorage.setItem('fsTheme','dark');}}else{{h.setAttribute('data-theme','light');localStorage.setItem('fsTheme','light');}}upd();}});}})();</script>
 </body></html>"""
 
 
